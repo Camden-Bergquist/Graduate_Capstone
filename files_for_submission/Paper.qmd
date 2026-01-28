@@ -1,0 +1,225 @@
+---
+title: "Project Title (Placeholder)"
+author: "Camden Bergquist"
+date: "Last compiled on `r format(Sys.time(), '%B %d, %Y')`"
+number-sections: true
+format:
+  pdf:
+    toc: true
+    lof: true
+    lot: true
+bibliography: references.bib
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r libraries,message=FALSE,warning=FALSE,echo=FALSE}
+library(tidyverse)
+# Reason for library ...
+#library(...)
+# Reason for library ...
+#library(...)
+
+```
+
+```{r extras,echo=FALSE}
+# Set seed is used because question ... uses a random generator
+set.seed(123)
+```
+
+
+
+Make sure every code chunk has echo=FALSE in its preamble unless you need to highlight the code for some reason in the paper.
+
+## Abstract
+Complete this after all other sections have been completed.
+
+\newpage
+
+
+
+
+# Introduction
+
+Competitive games have become a major source of large-scale behavioral data, enabling researchers to study strategic decision-making, skill development, and population-level trends using observational logs at scales unheard of compared to controlled studies [@edelmann2020css; @watts2014css]. Chess is one of the most famous competitive games in the world, and the relatively recent growth of online platforms has created datasets with millions to billions of games played under standardized rules and well-defined competitive contexts (time controls, ratings, game outcomes, etc.) [@watts2014css; @lichessDatabase]. One of the most widely used sources is the Lichess Open Database, which provides public monthly exports of rated games played on lichess.org in PGN format [@lichessDatabase; @lichessDatabaseGitHub]. These exports make it possible to study how strategy and performance vary across skill levels and time controls in a modern, online environment.
+
+This project intends to use Lichess game data to investigate contemporary metagame behavior and player development. Here, 'metagame' refers to the population-level distribution of strategic choices and styles observed in practice – such as opening families, risk preferences, and game outcomes – within a defined time window and player population. In addition to describing how strategic behavior differs by rating and time control, the project will attempt to connect these strategic signatures to measures of player progression over time. Because chess is a repeatedly played, fully competitive setting with a mature rating infrastructure, it offers a natural testbed for quantifying skill and comparing behavior across different players [@lichessRatingSystems; @glickmanGlicko2Desc].
+
+A central component of modern chess analytics is the rating system used to summarize player strength. The ELO rating system – a system originally developed for chess – models player performance probabilistically, and remains a foundational reference point for interpreting skill differences and expected outcomes in competitive settings [@elo1978rating; @fideElo2025]. Lichess uses a modified version of this system called 'Glicko-2', which, in addition to rating, tracks uncertainty via rating deviation and volatility [@lichessRatingSystems; @glickmanGlicko2Desc]. Ratings are especially useful for observational studies because they provide a consistent scale by which to stratify players and construct longitudinal measures of improvement [@glickmanGlicko2Desc].
+
+Overall, this project attempts to marry data science, computational social science, and strategic behavior: It treats online chess as a real-world environment where strategic choices and performance outcomes can be measured at scale and subsequently analyzed using statistical learning methods [@edelmann2020css; @watts2014css].
+
+## Background
+
+A growing research literature uses large online chess datasets to study human performance, decision-making, and strategic patterns. For example, Chowdhary et al. leverage an online chess dataset at the scale of over 100 million games to quantify performance dynamics and career-like trajectories, illustrating how large game archives support population-level behavioral measurement across skill levels [@chowdhary2023performance].
+
+One important line of work focuses on time usage and decision quality under time constraints. Online chess platforms record both move sequences and clock information, which allows researchers to study how players allocate thinking time and how time pressure shapes decisions. Russek et al. analyze millions of Lichess games to relate move times to the estimated value of additional computation, and show that time allocation patterns vary systematically with playing strength and time control [@russek2025thinking]. These findings support the idea that online chess is a rich setting for studying bounded rationality and performance under constraints, especially when comparing bullet, blitz, rapid, and classical formats [@russek2025thinking].
+
+Chess opening choice is also an active research topic. Because openings are discrete, labelable strategic choices that occur early in every game, they are well suited to population-level analysis. De Marzo and Servedio use online chess community data to quantify opening similarity and complexity, including representing openings in network form and studying how opening-related structure can be used to forecast future opening adoption [@demarzo2023openings]. This motivates analyzing metagame development in terms of shifting opening popularity and success rates across time, player skill, and time controls [@demarzo2023openings; @chowdhary2023performance].
+
+Finally, there is an emerging interest in identifying player styles or archetypes from game logs. While traditional chess analysis often focuses on engine evaluation of positions, a complementary approach is to extract behavioral features from move sequences and outcomes (e.g., game length, opening selection, and other style proxies) and use statistical learning to characterize player types. For instance, McIlroy-Young et al. demonstrate that models trained on move sequences can capture individual-specific signatures (“style”) in chess decisions, providing evidence that player behavior is meaningfully distinguishable from game records alone [@mcilroyyoung2021stylometry]. This creates a bridge between strategic analysis (what players choose to do) and longitudinal outcomes (how players improve or persist over time), which aligns closely with the goals of this project.
+
+Taken together, existing work suggests that large-scale online chess datasets support three relevant kinds of analysis: (1) descriptive metagame analysis of strategic choices across populations, (2) modeling how constraints like time pressure affect behavior and outcomes, and (3) data-driven characterization of player types and their evolution [@chowdhary2023performance; @russek2025thinking; @demarzo2023openings; @mcilroyyoung2021stylometry]. This project intends to build on those themes by using Lichess data to analyze modern opening/style patterns and connect them to measures of player performance and development over time.
+
+
+\newpage
+
+# The Data
+```{r data loading, echo=FALSE}
+# Load cleaned data here. If cleaning was required make sure to have a separate r file for the cleaning.
+```
+
+## Source
+Describe where this data comes from, why it was collected, who collected it, and how it was collected. A Citation may be useful here.
+
+## Variables
+Describe the variables of the data set. Some should have full descriptions if it is very important, i.e. it is the dependent variable, others can be discussed quickly. 
+
+A vertical table if better for listing variables than a horizontal table
+
+```{r variables, echo=FALSE}
+# Use this area to show the variables from your data set.
+```
+
+## Observations
+Describe what each observation of this data set represents using examples.
+
+Use a vertical table for showing a sample observation.
+
+```{r observation,echo=FALSE}
+# Use this spot to show an observation from your data set.
+```
+
+## Cleaning (if applicable)
+Describe any method of cleaning used including what was done for missing values if anything.
+
+# Exploratory Data Analysis
+Show the initial graphs and basic analysis methods used to determine your methodology
+
+## Interesting EDA 1 (Change name)
+Show some graph or numerical summary that imparts an interesting idea about the data set
+
+## Interesting EDA 2 (Change name)
+Show some graph or numerical summary that imparts an interesting idea about the data set
+
+
+\newpage
+
+
+# Methodology
+Describe the methods used to analyze the data. Do not discuss the analysis itself. Make sure to discuss any train/test data splitting here.
+
+## Data Tranformations (if applicable)
+Describe any transformation you did to the data to assist in the analyzing of the data such as creating dummy variables.
+
+## Types of Models
+Describe how many different models you used and why.
+
+### Model 1 (Change to appropriate name)
+Describe why you used model type one. You do not need to include a new section for every iteration of the same model type. For example you do not need 4 sections if you have 4 linear models with 1, 2, 3, and 4 independent variables.
+
+### Model 2 (Change to appropriate name)
+Describe why you used model type two.
+
+### Model 3 (Change to appropriate name)
+Describe why you used model type three.
+
+### Model 4 (Change to appropriate name)
+Describe why you used model type four.
+
+### Model 5 (Change to appropriate name)
+Describe why you used model type five.
+
+### Further Models
+If using more than 5 types of models, use this section to quickly discuss them here. These should only be models that you do not expect to be great.
+
+
+## Method of model selection
+Describe how you determine which model you choose at the end. Should also describe why you chose this method.
+
+
+
+\newpage
+
+
+# Results
+Describe the results that you received from the methods described earlier.
+
+## Model 1 (Change to appropriate name)
+Show the results for model type one. At least one fully written out model should be displayed for each model type.
+
+## Model 2 (Change to appropriate name)
+Show the results for model type two.
+
+## etc
+
+## Selected model
+Display the table that shows the model selection. If using more than 10 models only show the top 10 performing in the table, the full table should be in the appendix. The final model should be fully displayed.
+
+
+\newpage
+
+
+
+# Discussion
+
+## Final model interpolation  
+Discuss what information the selected model provides that may be new and interesting
+
+## Use of Model
+Describe how this model might be used by others.
+
+## Comparison
+Compare the things learned from this selected model to the previous information.
+
+
+\newpage
+
+# Furture Work
+Discuss what work could be done with this model to make it better.
+
+
+
+
+
+\newpage
+# References
+List the reference used for your paper. This should include anything cited in your background section and the source of your data.
+
+
+\newpage
+# Appendix
+## Appendix A Graphs (Use appropriate name)
+```{r appendix A, echo=FALSE}
+# Use this code to display useful graphs that do not belong in the body of the paper.
+# For example use this area for model validation graphs like residual versus fit.
+```
+
+### A.1 (Use appropriate name)
+If showing multiple graphs make sure to index them by 0.1 each
+
+
+\newpage
+
+## Appendix B Tables (Use appropriate name)
+```{r appendix B, echo=FALSE}
+# Use this area to show results that are in table format
+```
+
+### Appendix B.1 (Use appropriate name)
+If showing multiple tables make sure to index them by 0.1 each
+
+
+## Code
+```{r cleaning,echo=FALSE,eval=FALSE}
+# Write your cleaning code here
+```
+
+
+```{r ref.label=knitr::all_labels()}
+#| echo: true
+#| eval: false
+```
+
