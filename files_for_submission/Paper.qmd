@@ -4,10 +4,24 @@ author: "Camden Bergquist"
 date: "Last compiled on `r format(Sys.time(), '%B %d, %Y')`"
 number-sections: true
 format:
-  pdf:
+  jasa-pdf:
     toc: true
     lof: true
     lot: true
+    keep-tex: true
+    include-in-header:
+      text: |
+        \usepackage{url}
+        \usepackage{xurl}
+        \usepackage{booktabs}
+        \usepackage{tabularx}
+        \usepackage{xltabular}
+        \usepackage{array}
+        \usepackage{float}
+        \keepXColumns
+        \usepackage{ragged2e}
+        \newcolumntype{T}[1]{>{\RaggedRight\ttfamily\arraybackslash}p{#1}}
+        \newcommand{\us}{\_\allowbreak}
 bibliography: references.bib
 execute:
   echo: false
@@ -38,10 +52,7 @@ Complete this after all other sections have been completed.
 
 \newpage
 
-
-
-
-# Introduction
+## Introduction
 
 Competitive games have become a major source of large-scale behavioral data, enabling researchers to study strategic decision-making, skill development, and population-level trends using observational logs at scales unheard of compared to controlled studies [@edelmann2020css; @watts2014css]. Chess is one of the most famous competitive games in the world, and the relatively recent growth of online platforms has created datasets with millions to billions of games played under standardized rules and well-defined competitive contexts (time controls, ratings, game outcomes, etc.) [@watts2014css; @lichessDatabase]. One of the most widely used sources is the Lichess Open Database, which provides public monthly exports of rated games played on lichess.org in PGN format [@lichessDatabase; @lichessDatabaseGitHub]. These exports make it possible to study how strategy and performance vary across skill levels and time controls in a modern, online environment.
 
@@ -51,7 +62,7 @@ A central component of modern chess analytics is the rating system used to summa
 
 Overall, this project attempts to marry data science, computational social science, and strategic behavior: It treats online chess as a real-world environment where strategic choices and performance outcomes can be measured at scale and subsequently analyzed using statistical learning methods [@edelmann2020css; @watts2014css].
 
-## Background
+### Background
 
 A growing research literature uses large online chess datasets to study human performance, decision-making, and strategic patterns. For example, Chowdhary et al. leverage an online chess dataset at the scale of over 100 million games to quantify performance dynamics and career-like trajectories, illustrating how large game archives support population-level behavioral measurement across skill levels [@chowdhary2023performance].
 
@@ -66,77 +77,432 @@ Taken together, existing work suggests that large-scale online chess datasets su
 
 \newpage
 
-# The Data
+## The Data
 ```{r data loading, echo=FALSE}
 # Load cleaned data here. If cleaning was required make sure to have a separate r file for the cleaning.
 ```
 
-## Source
+### Source {#sec-source}
 Describe where this data comes from, why it was collected, who collected it, and how it was collected. A Citation may be useful here.
 
-## Variables
-Describe the variables of the data set. Some should have full descriptions if it is very important, i.e. it is the dependent variable, others can be discussed quickly. 
+Lichess is the largest open-source chess server is the world, and releases free, monthly exports of their game data under the Creative Commons CCO license [@lichessDatabase]. The site requires a log of the game data in order to function while a game is being played, but holds onto it after the fact to allow users to analyze their games after playing them. Though Lichess offers a powerful API, I elected to download data directly from their website in `.pgn.zst` format. The PGN (portable game notation) format is a plaintext format for chess games, containing moves, headers like players, date, and event, and even optional annotation. The `.zst` file extension (sometimes also written as `zstd`) represents Zstandard compression, which is a modern compressor similar to gzip or xz that's commonly used because it's fast and compresses well; think of it as a variation on a ZIP or RAR file. Zstandard compression can be expected to shrink PGN files by 5 times on its faster, less-efficient settings, and even more on it's slower ones.
 
-A vertical table if better for listing variables than a horizontal table
+For the purposes of this project, I downloaded 24 months of data spanning from January 2024 to December 2025, amounting to 677 gigabytes of raw data when compressed. Obviously, nearly 700 gigabytes of compressed data – 3~4 terabytes of uncompressed PGN data – is an insane amount to try to work with, capstone project or not. I have a powerful home computer, but that kind of scale requires something closer to a high-end server than a personal computer; it won't fly. Instead of tackling the problem head-on, I constructed a hybrid R/Python pipeline that downloads the data, deterministically samples and parses it into small chunks (in the form of parquet files), and then builds a selection of smaller, ready-for-analysis datasets from those chunks. Individually, no one dataset has the 20+ variables required in the project outline, but since I've built multiple datasets for multiple different types of analysis, they collectively meet that benchmark 
 
-```{r variables, echo=FALSE}
-# Use this area to show the variables from your data set.
+The download and parsing section of the pipeline handles the following:
+
+- Reads a config file `pipeline.yml` that controls the scope and parameters of the pipeline's operation.
+- Downloads monthly Lichess 'standard rated' PGN archives for each month specified in the YAML.
+- Decompresses each Zstandard file as a stream, scanning games one-by-one so it doesn't run into RAM bottlenecks.
+- Parses game headers first to decide whether a game is relevant before doing any heavy work (not all games are actually getting sampled, so it skips over the ones not being used).
+  - Extracts core metadata (players, ratings, time control, result, termination, opening, timestamps).
+  - Buckets each game into blitz/rapid/classical using the Lichess time-control convention.
+- Applies filtering rules from the YAML, which in this case are:
+  - Only include blitz/rapid/classical time controls.
+  - Only include games from players in the 800–2600 rating range.
+  - Drops unwanted terminations (aborted games).
+- Uses deterministic hash-based sampling to create reproducible subsets without needing to store the whole population:
+  - A meta sample keyed by `game_id` for population/metagame summaries, at a rate of 5/500 games.
+  - A player cohort keyed by `username` for longitudinal/player tracking at a rate of 3/500 players.
+  - A moves sample keyed by `game_id` for clock/time-per-move data at a rate of 5/10000 moves.
+- Deterministically anonymizes usernames based on a stable, salted hash.
+  - Cohort selection is computed on the real username before anonymization, so it remains reproducible.
+- Writes month-partitioned parquet outputs for game-level data.
+
+The dataset-building portion of the pipeline takes those outputs and, using DuckDB to read and write parquet files on the disk, builds seven datasets from them:
+
+- Player-level longitudinal summary tables from `games_cohort`:
+  - `player_month` (`pm`): player * month, 249,761 observations.
+  - `player_month_tc` (`pm_tc`): player * month * time control, 320,869 observations.
+- Player-opening 'repertoire' table from `games_cohort`:
+  - `player_opening_month_tc` (`pom_tc`): player * month * time control * opening, 7,167,580 observations.
+- Metagame tables from `games_meta`:
+  - `meta_month_tc` (`mm_tc`): month * time control, 72 observations.
+  - `meta_opening_month_tc` (`mom_tc`): month * time control * opening, 130,672 observations.
+- Time-usage tables from `moves_meta`:
+  - `moves_month_tc` (`mvm_tc`) month * time control, 72 observations.
+  - `player_time_month_tc` (`ptm_tc`): player * month * time control, 1,038,050 observations.
+
+The pipeline logs session and version info for both R and Python and records checksums for downloaded raw files to help with reproducibility.
+
+### Variables
+This project is working with multiple related-yet-distinct datasets. As such, it's very difficult to properly introduce the data without an according quantity of tables, which results in several pages worth of figures. My personal recommendation is to read through table 1, featured below, before moving straight to @sec-observations.^[I'm considering consolidating the Variables and Observations sections into one, as I feel they're somewhat redundant, or else perhaps moving the Variable tables entirely into the appendix. I need to consult you for permission on that first, though.] Most variable names are self-explanatory, so this section should largely be treated as a reference to skim through if a variable introduced later is confusing or unclear. Additionally, I elected to exclude tables `mm_tc` and `mvm_tc` from this section, as they're summary-level datasets that won't be explicitly modeled. Please refer to the <appendix placeholder; update when written> for information on them.
+
+```{=latex}
+\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{2.8cm} X}
+\caption{Core identifiers and categorical variables used across derived datasets.}\label{tab:variables-core}\\
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{3}{r}{\small\emph{Continued...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+\texttt{player} & categorical & Deterministic pseudonymous user ID (e.g., \texttt{u\us ...}). Appears in player-level tables (\texttt{pm}, \texttt{pm\us tc}, \texttt{pom\us tc}, \texttt{ptm\us tc}). \\
+\texttt{month} & categorical & Month of play as \texttt{YYYY-MM}. Primary time index for metagame and longitudinal analysis. \\
+\texttt{tc\us bucket} & categorical & Time control bucket: \texttt{blitz}, \texttt{rapid}, or \texttt{classical}. Used to stratify behavior by constraint level. \\
+\texttt{eco} & categorical & ECO opening code (e.g., \texttt{C41}). Standardized opening taxonomy useful for grouping openings into families. \\
+\texttt{opening} & categorical & Human-readable opening family name (e.g., \texttt{Philidor Defense}). Used in repertoire and metagame summaries. \\
+\end{xltabular}
+
+
+
+
 ```
 
-## Observations
-Describe what each observation of this data set represents using examples.
+```{=latex}
+\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{2.6cm} X}
+\caption{Player-month outcome and covariate variables (tables: \texttt{pm}, \texttt{pm\us tc}).}\label{tab:variables-player-month}\\
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endfirsthead
 
-Use a vertical table for showing a sample observation.
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endhead
 
-```{r observation,echo=FALSE}
-# Use this spot to show an observation from your data set.
+\midrule
+\multicolumn{3}{r}{\small\emph{Continued...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+\texttt{games} & numeric (count) & Number of games played in the month (and time-control bucket for \texttt{pm\us tc}). Also a reliability/weighting signal. \\
+\texttt{wins} & numeric (count) & Count of wins in the period. \\
+\texttt{losses} & numeric (count) & Count of losses in the period. \\
+\texttt{draws} & numeric (count) & Count of draws in the period. \\
+\texttt{win\us rate} & numeric (proportion) & Key performance metric: wins divided by games. Natural response variable for performance models. \\
+\texttt{draw\us rate} & numeric (proportion) & Draws divided by games. Useful because draw propensity varies by skill, time control, and strategic choices. \\
+\texttt{avg\us rating} & numeric & Primary skill proxy: average of the player’s pre-game rating across games in the period. Used for stratification and longitudinal change. \\
+\texttt{avg\us opp\us rating} & numeric & Average opponent rating. Contextualizes performance and approximates strength of schedule. \\
+\texttt{avg\us rating\us diff} & numeric & Average (player rating minus opponent rating). Summarizes typical matchup difficulty. \\
+\texttt{avg\us moves} & numeric & Average game length (moves). Proxy for style/complexity. \\
+\texttt{opening\us diversity} & numeric (count) & Number of distinct openings used in the period. Proxy for repertoire breadth. \\
+\texttt{top\us opening} & categorical & Most frequently played opening during the period (ties broken deterministically). \\
+\end{xltabular}
+
+
+
 ```
 
-## Cleaning (if applicable)
-Describe any method of cleaning used including what was done for missing values if anything.
+```{=latex}
+\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{2.6cm} X}
+\caption{Player-opening table variables (table: \texttt{pom\us tc}).}\label{tab:variables-player-opening}\\
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endfirsthead
 
-# Exploratory Data Analysis
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{3}{r}{\small\emph{Continued...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+\texttt{games} & numeric (count) & Number of games the player played with the given opening in the month/time-control bucket. Used as a frequency weight. \\
+\texttt{win\us rate} & numeric (proportion) & Opening-specific win rate for the player and period. Used to study effectiveness conditional on opening. \\
+\texttt{draw\us rate} & numeric (proportion) & Opening-specific draw rate. Helps characterize risk profile and style. \\
+\texttt{avg\us rating} & numeric & Average player rating in games where the opening was played. Enables comparison of opening choice across skill. \\
+\texttt{avg\us rating\us diff} & numeric & Average rating difference in games where the opening was played. Captures whether openings are used in tougher/easier matchups. \\
+\end{xltabular}
+
+
+
+
+```
+
+```{=latex}
+\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{2.6cm} X}
+\caption{Player time-use table variables (table: \texttt{ptm\us tc}).}\label{tab:variables-player-time}\\
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{3}{r}{\small\emph{Continued...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+\texttt{move\us rows} & numeric (count) & Number of move observations contributing to the summary (after sampling and filtering). Reliability signal. \\
+\texttt{games} & numeric (count) & Number of distinct games contributing move records for the player-month-time-control group. \\
+\texttt{avg\us time\us spent} & numeric (seconds) & Mean time spent per move. Captures typical deliberation time. \\
+\texttt{median\us time\us spent} & numeric (seconds) & Median time spent per move; robust to outliers and occasional long thinks. \\
+\texttt{p90\us time\us spent} & numeric (seconds) & 90th percentile of time spent per move. Measures tendency for occasional deep computation. \\
+\texttt{avg\us clock\us after} & numeric (seconds) & Mean remaining clock time after moves. Proxy for time management and pacing. \\
+\texttt{low\us time\us rate} & numeric (proportion) & Fraction of moves under a low-time threshold. Proxy for time trouble frequency. \\
+\texttt{avg\us rating} & numeric & Average player rating across move records in the group; allows stratification by skill. \\
+\texttt{avg\us rating\us diff} & numeric & Average rating difference across the move sample; controls for opponent strength effects. \\
+\texttt{avg\us time\us opening} & numeric (seconds) & Average time spent per move during the opening phase (if phase segmentation is available; game phases are defined by chess-engine analysis). \\
+\texttt{avg\us time\us middlegame} & numeric (seconds) & Average time spent per move during middlegame phase (may be missing for very short games). \\
+\texttt{avg\us time\us endgame} & numeric (seconds) & Average time spent per move during endgame phase (often missing because many games never reach endgame). \\
+\end{xltabular}
+
+
+
+```
+
+```{=latex}
+\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{2.6cm} X}
+\caption{Metagame opening table variables (table: \texttt{mom\us tc}).}\label{tab:variables-metagame-opening}\\
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{3}{r}{\small\emph{Continued...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+\texttt{games} & numeric (count) & Number of sampled games for the opening within month and time control. Precision/support indicator. \\
+\texttt{share} & numeric (proportion) & Core metagame measure: fraction of games using the opening within a month/time-control bucket. Tracks adoption shifts. \\
+\texttt{white\us win\us rate} & numeric (proportion) & Fraction of games where White wins. Used for opening-level success patterns and color asymmetries. \\
+\texttt{black\us win\us rate} & numeric (proportion) & Fraction of games where Black wins. Complements White win rate. \\
+\texttt{draw\us rate} & numeric (proportion) & Fraction of games drawn. Draw propensity varies by opening and time control. \\
+\texttt{upset\us rate} & numeric (proportion) & Fraction of games where the lower-rated player wins (pipeline definition). Proxy for volatility/competitiveness. \\
+\texttt{avg\us abs\us rating\us diff} & numeric & Mean absolute rating gap between players in the opening/month/tc group. Context for outcome rates. \\
+\texttt{avg\us moves} & numeric & Mean game length for the opening/month/tc group. Proxy for complexity and style at population level. \\
+\end{xltabular}
+
+
+```
+
+### Observations {#sec-observations}
+Each derived dataset is organized at a different unit of analysis (e.g., player-by-month or opening-by-month). In all cases, the raw unit of data is a rated chess game from the Lichess public database, but the pipeline aggregates games (and, for time-use, moves) into analysis-ready summaries. Because many variables overlap across tables, the observation structure can be summarized with a small set of representative row types. The examples below demonstrate the core units: (1) player-period summaries (with optional time-use extensions), (2) player opening-level summaries, and (3) population-level metagame summaries for openings.
+
+
+```{=latex}
+\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.4cm} X}
+\caption{Sample observation for player-period outcome summaries (tables: \texttt{pm}, \texttt{pm\us tc}).}\label{tab:obs-player-period-outcomes}\\
+\toprule
+\textbf{Field} & \textbf{Example Value/Meaning} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Field} & \textbf{Example Value/Meaning} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{2}{r}{\small\emph{Continued...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+\texttt{player} & \texttt{u\us 0001cf80083d0517} (stable pseudonymous identifier) \\
+\texttt{month} & \texttt{2024-12} (calendar month) \\
+\texttt{tc\us bucket} & \texttt{rapid} (present in \texttt{pm\us tc}; omitted in \texttt{pm}) \\
+\texttt{games} & 5 (total games in this player-month-(tc) group) \\
+\texttt{wins} & 4 \\
+\texttt{losses} & 0 \\
+\texttt{draws} & 1 \\
+\texttt{win\us rate} & 0.80 (wins / games) \\
+\texttt{draw\us rate} & 0.20 (draws / games) \\
+\texttt{avg\us rating} & 1544.0 (mean pre-game rating across games) \\
+\texttt{avg\us opp\us rating} & 1503.2 (mean opponent rating across games) \\
+\texttt{avg\us rating\us diff} & 40.8 (mean rating difference: player minus opponent) \\
+\texttt{avg\us moves} & 40.4 (mean game length in moves) \\
+\texttt{opening\us diversity} & 4 (distinct openings played in the group) \\
+\texttt{top\us opening} & \texttt{Ponziani Opening: Jaenisch Counterattack} (most frequent opening) \\
+\end{xltabular}
+
+
+```
+
+
+```{=latex}
+\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.4cm} X}
+\caption{Sample observation for player-period time-use summaries (table: \texttt{ptm\us tc}).}\label{tab:obs-player-timeuse}\\
+\toprule
+\textbf{Field} & \textbf{Example Value/Meaning} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Field} & \textbf{Example Value/Meaning} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{2}{r}{\small\emph{Continued...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+\texttt{player} & \texttt{u\us 00004578077e9fa4} (stable pseudonymous identifier) \\
+\texttt{month} & \texttt{2024-08} \\
+\texttt{tc\us bucket} & \texttt{blitz} \\
+\texttt{move\us rows} & 70 (number of move records contributing to this summary) \\
+\texttt{games} & 1 (distinct games represented among the sampled moves) \\
+\texttt{avg\us time\us spent} & 1.66 seconds (mean time spent per move) \\
+\texttt{median\us time\us spent} & 1.0 seconds (median time spent per move) \\
+\texttt{p90\us time\us spent} & 3.1 seconds (90th percentile time spent per move) \\
+\texttt{avg\us clock\us after} & 122.5 seconds (mean remaining clock after moves) \\
+\texttt{low\us time\us rate} & 0.00 (share of moves flagged as low-time) \\
+\texttt{avg\us rating} & 1677.0 (mean pre-move rating across sampled moves) \\
+\texttt{avg\us rating\us diff} & 11.0 (mean rating difference across sampled moves) \\
+\texttt{avg\us time\us opening} & 0.9 seconds (mean time spent in opening phase) \\
+\texttt{avg\us time\us middlegame} & 2.2 seconds (mean time spent in middlegame phase) \\
+\texttt{avg\us time\us endgame} & 1.64 seconds (mean time spent in endgame phase; may be missing) \\
+\end{xltabular}
+
+
+```
+
+
+```{=latex}
+\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.4cm} X}
+\caption{Sample observations for opening-level summaries: player repertoire entries (\texttt{pom\us tc}) and population metagame cells (\texttt{mom\us tc}).}\label{tab:obs-opening-level}\\
+\toprule
+\textbf{Field} & \textbf{Example Value/Meaning} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Field} & \textbf{Example Value/Meaning} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{2}{r}{\small\emph{Continued...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+\multicolumn{2}{l}{\textbf{Player opening summary (table: \texttt{pom\us tc})}} \\
+\texttt{player} & \texttt{u\us 0001cf80083d0517} \\
+\texttt{month} & \texttt{2024-11} \\
+\texttt{tc\us bucket} & \texttt{blitz} \\
+\texttt{eco} & \texttt{B13} \\
+\texttt{opening} & \texttt{Caro-Kann Defense: Exchange Variation} \\
+\texttt{games} & 4 (games where this player used the opening in this month/tc) \\
+\texttt{win\us rate} & 0.50 (opening-conditional win rate for the player) \\
+\texttt{draw\us rate} & 0.00 (opening-conditional draw rate for the player) \\
+\texttt{avg\us rating} & 1965.3 (mean rating in games using this opening) \\
+\texttt{avg\us rating\us diff} & 12.0 (mean rating difference in those games) \\
+
+\midrule
+\multicolumn{2}{l}{\textbf{Population opening summary (table: \texttt{mom\us tc})}} \\
+\texttt{month} & \texttt{2024-01} \\
+\texttt{tc\us bucket} & \texttt{blitz} \\
+\texttt{eco} & \texttt{C41} \\
+\texttt{opening} & \texttt{Philidor Defense} \\
+\texttt{games} & 8{,}825 (sampled games using this opening in the month/tc group) \\
+\texttt{share} & 0.0189 (opening share of the month/tc metagame) \\
+\texttt{white\us win\us rate} & 0.512 (fraction of games White wins) \\
+\texttt{black\us win\us rate} & 0.442 (fraction of games Black wins) \\
+\texttt{draw\us rate} & 0.0466 (fraction drawn) \\
+\texttt{upset\us rate} & 0.436 (fraction where lower-rated player wins) \\
+\texttt{avg\us abs\us rating\us diff} & 50.2 (mean rating gap magnitude) \\
+\texttt{avg\us moves} & 35.5 (mean game length) \\
+\end{xltabular}
+
+
+```
+
+Together, these observation types support longitudinal player performance modeling (`pm`, `pm_tc`), repertoire/style measurement from opening choice (`pom_tc`), metagame dynamics via opening adoption and outcomes (`mom_tc`), and bounded-rationality/time-management analyses using move-time features (`ptm_tc`).
+
+
+### Cleaning
+
+A large amount of cleaning was performed during the pipeline's parsing steps. The filtering and deterministic sampling was already touched upon in #sec-source, but additional standardization and feature construction include:
+
+- `TimeControl` tag parsed into:
+  - `initial` (seconds).
+  - `increment` (seconds).
+  - `tc_bucket` (< 180 = bullet, < 600 = blitz, < 1800 = rapid, else classical),
+- Converted PGN result strings into:
+  - `winner` (white/black/draw).
+  - `score_white` (1/0.5/0).
+- Computed upset indicators using ratings:
+  - `rating_diff` = `white_rating` - `black rating`.
+  - `abs_rating_diff`
+  - `is_upset`
+- Game-length variables:
+  - Computed `piles` and `moves` from move sequences (used to construct final datasets).
+
+The information was then restructured and aggregated into a tidy format.
+
+## Exploratory Data Analysis
 Show the initial graphs and basic analysis methods used to determine your methodology
 
-## Interesting EDA 1 (Change name)
+### Interesting EDA 1 (Change name)
 Show some graph or numerical summary that imparts an interesting idea about the data set
 
-## Interesting EDA 2 (Change name)
+### Interesting EDA 2 (Change name)
 Show some graph or numerical summary that imparts an interesting idea about the data set
 
 
 \newpage
 
 
-# Methodology
+## Methodology
 Describe the methods used to analyze the data. Do not discuss the analysis itself. Make sure to discuss any train/test data splitting here.
 
-## Data Tranformations (if applicable)
+### Data Tranformations (if applicable)
 Describe any transformation you did to the data to assist in the analyzing of the data such as creating dummy variables.
 
-## Types of Models
+### Types of Models
 Describe how many different models you used and why.
 
-### Model 1 (Change to appropriate name)
+#### Model 1 (Change to appropriate name)
 Describe why you used model type one. You do not need to include a new section for every iteration of the same model type. For example you do not need 4 sections if you have 4 linear models with 1, 2, 3, and 4 independent variables.
 
-### Model 2 (Change to appropriate name)
+#### Model 2 (Change to appropriate name)
 Describe why you used model type two.
 
-### Model 3 (Change to appropriate name)
+#### Model 3 (Change to appropriate name)
 Describe why you used model type three.
 
-### Model 4 (Change to appropriate name)
+#### Model 4 (Change to appropriate name)
 Describe why you used model type four.
 
-### Model 5 (Change to appropriate name)
+#### Model 5 (Change to appropriate name)
 Describe why you used model type five.
 
-### Further Models
+#### Further Models
 If using more than 5 types of models, use this section to quickly discuss them here. These should only be models that you do not expect to be great.
 
 
-## Method of model selection
+### Method of model selection
 Describe how you determine which model you choose at the end. Should also describe why you chose this method.
 
 
@@ -144,18 +510,18 @@ Describe how you determine which model you choose at the end. Should also descri
 \newpage
 
 
-# Results
+## Results
 Describe the results that you received from the methods described earlier.
 
-## Model 1 (Change to appropriate name)
+### Model 1 (Change to appropriate name)
 Show the results for model type one. At least one fully written out model should be displayed for each model type.
 
-## Model 2 (Change to appropriate name)
+### Model 2 (Change to appropriate name)
 Show the results for model type two.
 
-## etc
+### etc
 
-## Selected model
+### Selected model
 Display the table that shows the model selection. If using more than 10 models only show the top 10 performing in the table, the full table should be in the appendix. The final model should be fully displayed.
 
 
@@ -163,21 +529,21 @@ Display the table that shows the model selection. If using more than 10 models o
 
 
 
-# Discussion
+## Discussion
 
-## Final model interpolation  
+### Final model interpolation  
 Discuss what information the selected model provides that may be new and interesting
 
-## Use of Model
+### Use of Model
 Describe how this model might be used by others.
 
-## Comparison
+### Comparison
 Compare the things learned from this selected model to the previous information.
 
 
 \newpage
 
-# Furture Work
+## Furture Work
 Discuss what work could be done with this model to make it better.
 
 
@@ -185,34 +551,34 @@ Discuss what work could be done with this model to make it better.
 
 
 \newpage
-# References
+## References
 List the reference used for your paper. This should include anything cited in your background section and the source of your data.
 
 
 \newpage
-# Appendix
-## Appendix A Graphs (Use appropriate name)
+## Appendix
+### Appendix A Graphs (Use appropriate name)
 ```{r appendix A, echo=FALSE}
 # Use this code to display useful graphs that do not belong in the body of the paper.
 # For example use this area for model validation graphs like residual versus fit.
 ```
 
-### A.1 (Use appropriate name)
+#### A.1 (Use appropriate name)
 If showing multiple graphs make sure to index them by 0.1 each
 
 
 \newpage
 
-## Appendix B Tables (Use appropriate name)
+### Appendix B Tables (Use appropriate name)
 ```{r appendix B, echo=FALSE}
 # Use this area to show results that are in table format
 ```
 
-### Appendix B.1 (Use appropriate name)
+#### Appendix B.1 (Use appropriate name)
 If showing multiple tables make sure to index them by 0.1 each
 
 
-## Code
+### Code
 ```{r cleaning,echo=FALSE,eval=FALSE}
 # Write your cleaning code here
 ```

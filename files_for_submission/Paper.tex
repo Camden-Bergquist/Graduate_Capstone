@@ -1,0 +1,1071 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+\PassOptionsToPackage{dvipsnames,svgnames,x11names}{xcolor}
+%
+\documentclass[
+  12pt]{article}
+
+\usepackage{amsmath,amssymb}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math}
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else  
+    % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\setcounter{secnumdepth}{5}
+% Make \paragraph and \subparagraph free-standing
+\makeatletter
+\ifx\paragraph\undefined\else
+  \let\oldparagraph\paragraph
+  \renewcommand{\paragraph}{
+    \@ifstar
+      \xxxParagraphStar
+      \xxxParagraphNoStar
+  }
+  \newcommand{\xxxParagraphStar}[1]{\oldparagraph*{#1}\mbox{}}
+  \newcommand{\xxxParagraphNoStar}[1]{\oldparagraph{#1}\mbox{}}
+\fi
+\ifx\subparagraph\undefined\else
+  \let\oldsubparagraph\subparagraph
+  \renewcommand{\subparagraph}{
+    \@ifstar
+      \xxxSubParagraphStar
+      \xxxSubParagraphNoStar
+  }
+  \newcommand{\xxxSubParagraphStar}[1]{\oldsubparagraph*{#1}\mbox{}}
+  \newcommand{\xxxSubParagraphNoStar}[1]{\oldsubparagraph{#1}\mbox{}}
+\fi
+\makeatother
+
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\usepackage{framed}
+\definecolor{shadecolor}{RGB}{241,243,245}
+\newenvironment{Shaded}{\begin{snugshade}}{\end{snugshade}}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{#1}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.40,0.45,0.13}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
+\newcommand{\BuiltInTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{#1}}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.13,0.47,0.30}{#1}}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{#1}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{\textit{#1}}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{\textit{#1}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
+\newcommand{\ExtensionTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{#1}}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.28,0.35,0.67}{#1}}
+\newcommand{\ImportTok}[1]{\textcolor[rgb]{0.00,0.46,0.62}{#1}}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{#1}}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{#1}}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{#1}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{#1}}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
+\newcommand{\RegionMarkerTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{#1}}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{#1}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.13,0.47,0.30}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.13,0.47,0.30}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.07,0.07,0.07}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.13,0.47,0.30}{#1}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{\textit{#1}}}
+
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}\usepackage{longtable,booktabs,array}
+\usepackage{calc} % for calculating minipage widths
+% Correct order of tables after \paragraph or \subparagraph
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd\longtable{\par}{\if@noskipsec\mbox{}\fi\par}{}{}
+\makeatother
+% Allow footnotes in longtable head/foot
+\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}
+\makesavenoteenv{longtable}
+\usepackage{graphicx}
+\makeatletter
+\newsavebox\pandoc@box
+\newcommand*\pandocbounded[1]{% scales image to fit in text height/width
+  \sbox\pandoc@box{#1}%
+  \Gscale@div\@tempa{\textheight}{\dimexpr\ht\pandoc@box+\dp\pandoc@box\relax}%
+  \Gscale@div\@tempb{\linewidth}{\wd\pandoc@box}%
+  \ifdim\@tempb\p@<\@tempa\p@\let\@tempa\@tempb\fi% select the smaller of both
+  \ifdim\@tempa\p@<\p@\scalebox{\@tempa}{\usebox\pandoc@box}%
+  \else\usebox{\pandoc@box}%
+  \fi%
+}
+% Set default figure placement to htbp
+\def\fps@figure{htbp}
+\makeatother
+
+\addtolength{\oddsidemargin}{-.5in}%
+\addtolength{\evensidemargin}{-1in}%
+\addtolength{\textwidth}{1in}%
+\addtolength{\textheight}{1.7in}%
+\addtolength{\topmargin}{-1in}%
+\usepackage{url}
+\usepackage{xurl}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{xltabular}
+\usepackage{array}
+\usepackage{float}
+\keepXColumns
+\usepackage{ragged2e}
+\newcolumntype{T}[1]{>{\RaggedRight\ttfamily\arraybackslash}p{#1}}
+\newcommand{\us}{\_\allowbreak}
+\makeatletter
+\@ifpackageloaded{caption}{}{\usepackage{caption}}
+\AtBeginDocument{%
+\ifdefined\contentsname
+  \renewcommand*\contentsname{Table of contents}
+\else
+  \newcommand\contentsname{Table of contents}
+\fi
+\ifdefined\listfigurename
+  \renewcommand*\listfigurename{List of Figures}
+\else
+  \newcommand\listfigurename{List of Figures}
+\fi
+\ifdefined\listtablename
+  \renewcommand*\listtablename{List of Tables}
+\else
+  \newcommand\listtablename{List of Tables}
+\fi
+\ifdefined\figurename
+  \renewcommand*\figurename{Figure}
+\else
+  \newcommand\figurename{Figure}
+\fi
+\ifdefined\tablename
+  \renewcommand*\tablename{Table}
+\else
+  \newcommand\tablename{Table}
+\fi
+}
+\@ifpackageloaded{float}{}{\usepackage{float}}
+\floatstyle{ruled}
+\@ifundefined{c@chapter}{\newfloat{codelisting}{h}{lop}}{\newfloat{codelisting}{h}{lop}[chapter]}
+\floatname{codelisting}{Listing}
+\newcommand*\listoflistings{\listof{codelisting}{List of Listings}}
+\makeatother
+\makeatletter
+\makeatother
+\makeatletter
+\@ifpackageloaded{caption}{}{\usepackage{caption}}
+\@ifpackageloaded{subcaption}{}{\usepackage{subcaption}}
+\makeatother
+
+\usepackage[]{natbib}
+\bibliographystyle{agsm}
+\usepackage{bookmark}
+
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same} % disable monospaced font for URLs
+\hypersetup{
+  pdftitle={Project Title (Placeholder)},
+  pdfauthor={Camden Bergquist},
+  colorlinks=true,
+  linkcolor={blue},
+  filecolor={Maroon},
+  citecolor={Blue},
+  urlcolor={Blue},
+  pdfcreator={LaTeX via pandoc}}
+
+
+
+\begin{document}
+
+
+\def\spacingset#1{\renewcommand{\baselinestretch}%
+{#1}\small\normalsize} \spacingset{1}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\date{January 30, 2026}
+\title{\bf Project Title (Placeholder)}
+\author{
+Camden Bergquist\\
+}
+\maketitle
+
+\bigskip
+\bigskip
+\begin{abstract}
+
+\end{abstract}
+
+
+\newpage
+\spacingset{1.9} % DON'T change the spacing!
+
+\renewcommand*\contentsname{Table of contents}
+{
+\hypersetup{linkcolor=}
+\setcounter{tocdepth}{3}
+\tableofcontents
+}
+\listoffigures
+\listoftables
+
+Make sure every code chunk has echo=FALSE in its preamble unless you
+need to highlight the code for some reason in the paper.
+
+\section{Abstract}\label{abstract}
+
+Complete this after all other sections have been completed.
+
+\newpage
+
+\section{Introduction}\label{introduction}
+
+Competitive games have become a major source of large-scale behavioral
+data, enabling researchers to study strategic decision-making, skill
+development, and population-level trends using observational logs at
+scales unheard of compared to controlled studies
+\citep{edelmann2020css, watts2014css}. Chess is one of the most famous
+competitive games in the world, and the relatively recent growth of
+online platforms has created datasets with millions to billions of games
+played under standardized rules and well-defined competitive contexts
+(time controls, ratings, game outcomes, etc.)
+\citep{watts2014css, lichessDatabase}. One of the most widely used
+sources is the Lichess Open Database, which provides public monthly
+exports of rated games played on lichess.org in PGN format
+\citep{lichessDatabase, lichessDatabaseGitHub}. These exports make it
+possible to study how strategy and performance vary across skill levels
+and time controls in a modern, online environment.
+
+This project intends to use Lichess game data to investigate
+contemporary metagame behavior and player development. Here, `metagame'
+refers to the population-level distribution of strategic choices and
+styles observed in practice -- such as opening families, risk
+preferences, and game outcomes -- within a defined time window and
+player population. In addition to describing how strategic behavior
+differs by rating and time control, the project will attempt to connect
+these strategic signatures to measures of player progression over time.
+Because chess is a repeatedly played, fully competitive setting with a
+mature rating infrastructure, it offers a natural testbed for
+quantifying skill and comparing behavior across different players
+\citep{lichessRatingSystems, glickmanGlicko2Desc}.
+
+A central component of modern chess analytics is the rating system used
+to summarize player strength. The ELO rating system -- a system
+originally developed for chess -- models player performance
+probabilistically, and remains a foundational reference point for
+interpreting skill differences and expected outcomes in competitive
+settings \citep{elo1978rating, fideElo2025}. Lichess uses a modified
+version of this system called `Glicko-2', which, in addition to rating,
+tracks uncertainty via rating deviation and volatility
+\citep{lichessRatingSystems, glickmanGlicko2Desc}. Ratings are
+especially useful for observational studies because they provide a
+consistent scale by which to stratify players and construct longitudinal
+measures of improvement \citep{glickmanGlicko2Desc}.
+
+Overall, this project attempts to marry data science, computational
+social science, and strategic behavior: It treats online chess as a
+real-world environment where strategic choices and performance outcomes
+can be measured at scale and subsequently analyzed using statistical
+learning methods \citep{edelmann2020css, watts2014css}.
+
+\subsection{Background}\label{background}
+
+A growing research literature uses large online chess datasets to study
+human performance, decision-making, and strategic patterns. For example,
+Chowdhary et al.~leverage an online chess dataset at the scale of over
+100 million games to quantify performance dynamics and career-like
+trajectories, illustrating how large game archives support
+population-level behavioral measurement across skill levels
+\citep{chowdhary2023performance}.
+
+One important line of work focuses on time usage and decision quality
+under time constraints. Online chess platforms record both move
+sequences and clock information, which allows researchers to study how
+players allocate thinking time and how time pressure shapes decisions.
+Russek et al.~analyze millions of Lichess games to relate move times to
+the estimated value of additional computation, and show that time
+allocation patterns vary systematically with playing strength and time
+control \citep{russek2025thinking}. These findings support the idea that
+online chess is a rich setting for studying bounded rationality and
+performance under constraints, especially when comparing bullet, blitz,
+rapid, and classical formats \citep{russek2025thinking}.
+
+Chess opening choice is also an active research topic. Because openings
+are discrete, labelable strategic choices that occur early in every
+game, they are well suited to population-level analysis. De Marzo and
+Servedio use online chess community data to quantify opening similarity
+and complexity, including representing openings in network form and
+studying how opening-related structure can be used to forecast future
+opening adoption \citep{demarzo2023openings}. This motivates analyzing
+metagame development in terms of shifting opening popularity and success
+rates across time, player skill, and time controls
+\citep{demarzo2023openings, chowdhary2023performance}.
+
+Finally, there is an emerging interest in identifying player styles or
+archetypes from game logs. While traditional chess analysis often
+focuses on engine evaluation of positions, a complementary approach is
+to extract behavioral features from move sequences and outcomes (e.g.,
+game length, opening selection, and other style proxies) and use
+statistical learning to characterize player types. For instance,
+McIlroy-Young et al.~demonstrate that models trained on move sequences
+can capture individual-specific signatures (``style'') in chess
+decisions, providing evidence that player behavior is meaningfully
+distinguishable from game records alone
+\citep{mcilroyyoung2021stylometry}. This creates a bridge between
+strategic analysis (what players choose to do) and longitudinal outcomes
+(how players improve or persist over time), which aligns closely with
+the goals of this project.
+
+Taken together, existing work suggests that large-scale online chess
+datasets support three relevant kinds of analysis: (1) descriptive
+metagame analysis of strategic choices across populations, (2) modeling
+how constraints like time pressure affect behavior and outcomes, and (3)
+data-driven characterization of player types and their evolution
+\citep{chowdhary2023performance, russek2025thinking, demarzo2023openings, mcilroyyoung2021stylometry}.
+This project intends to build on those themes by using Lichess data to
+analyze modern opening/style patterns and connect them to measures of
+player performance and development over time.
+
+\newpage
+
+\section{The Data}\label{the-data}
+
+\subsection{Source}\label{sec-source}
+
+Describe where this data comes from, why it was collected, who collected
+it, and how it was collected. A Citation may be useful here.
+
+Lichess is the largest open-source chess server is the world, and
+releases free, monthly exports of their game data under the Creative
+Commons CCO license \citep{lichessDatabase}. The site requires a log of
+the game data in order to function while a game is being played, but
+holds onto it after the fact to allow users to analyze their games after
+playing them. Though Lichess offers a powerful API, I elected to
+download data directly from their website in \texttt{.pgn.zst} format.
+The PGN (portable game notation) format is a plaintext format for chess
+games, containing moves, headers like players, date, and event, and even
+optional annotation. The \texttt{.zst} file extension (sometimes also
+written as \texttt{zstd}) represents Zstandard compression, which is a
+modern compressor similar to gzip or xz that's commonly used because
+it's fast and compresses well; think of it as a variation on a ZIP or
+RAR file. Zstandard compression can be expected to shrink PGN files by 5
+times on its faster, less-efficient settings, and even more on it's
+slower ones.
+
+For the purposes of this project, I downloaded 24 months of data
+spanning from January 2024 to December 2025, amounting to 677 gigabytes
+of raw data when compressed. Obviously, nearly 700 gigabytes of
+compressed data -- 3\textasciitilde4 terabytes of uncompressed PGN data
+-- is an insane amount to try to work with, capstone project or not. I
+have a powerful home computer, but that kind of scale requires something
+closer to a high-end server than a personal computer; it won't fly.
+Instead of tackling the problem head-on, I constructed a hybrid R/Python
+pipeline that downloads the data, deterministically samples and parses
+it into small chunks (in the form of parquet files), and then builds a
+selection of smaller, ready-for-analysis datasets from those chunks.
+Individually, no one dataset has the 20+ variables required in the
+project outline, but since I've built multiple datasets for multiple
+different types of analysis, they collectively meet that benchmark
+
+The download and parsing section of the pipeline handles the following:
+
+\begin{itemize}
+\tightlist
+\item
+  Reads a config file \texttt{pipeline.yml} that controls the scope and
+  parameters of the pipeline's operation.
+\item
+  Downloads monthly Lichess `standard rated' PGN archives for each month
+  specified in the YAML.
+\item
+  Decompresses each Zstandard file as a stream, scanning games
+  one-by-one so it doesn't run into RAM bottlenecks.
+\item
+  Parses game headers first to decide whether a game is relevant before
+  doing any heavy work (not all games are actually getting sampled, so
+  it skips over the ones not being used).
+
+  \begin{itemize}
+  \tightlist
+  \item
+    Extracts core metadata (players, ratings, time control, result,
+    termination, opening, timestamps).
+  \item
+    Buckets each game into blitz/rapid/classical using the Lichess
+    time-control convention.
+  \end{itemize}
+\item
+  Applies filtering rules from the YAML, which in this case are:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    Only include blitz/rapid/classical time controls.
+  \item
+    Only include games from players in the 800--2600 rating range.
+  \item
+    Drops unwanted terminations (aborted games).
+  \end{itemize}
+\item
+  Uses deterministic hash-based sampling to create reproducible subsets
+  without needing to store the whole population:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    A meta sample keyed by \texttt{game\_id} for population/metagame
+    summaries, at a rate of 5/500 games.
+  \item
+    A player cohort keyed by \texttt{username} for longitudinal/player
+    tracking at a rate of 3/500 players.
+  \item
+    A moves sample keyed by \texttt{game\_id} for clock/time-per-move
+    data at a rate of 5/10000 moves.
+  \end{itemize}
+\item
+  Deterministically anonymizes usernames based on a stable, salted hash.
+
+  \begin{itemize}
+  \tightlist
+  \item
+    Cohort selection is computed on the real username before
+    anonymization, so it remains reproducible.
+  \end{itemize}
+\item
+  Writes month-partitioned parquet outputs for game-level data.
+\end{itemize}
+
+The dataset-building portion of the pipeline takes those outputs and,
+using DuckDB to read and write parquet files on the disk, builds seven
+datasets from them:
+
+\begin{itemize}
+\tightlist
+\item
+  Player-level longitudinal summary tables from \texttt{games\_cohort}:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    \texttt{player\_month} (\texttt{pm}): player * month, 249,761
+    observations.
+  \item
+    \texttt{player\_month\_tc} (\texttt{pm\_tc}): player * month * time
+    control, 320,869 observations.
+  \end{itemize}
+\item
+  Player-opening `repertoire' table from \texttt{games\_cohort}:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    \texttt{player\_opening\_month\_tc} (\texttt{pom\_tc}): player *
+    month * time control * opening, 7,167,580 observations.
+  \end{itemize}
+\item
+  Metagame tables from \texttt{games\_meta}:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    \texttt{meta\_month\_tc} (\texttt{mm\_tc}): month * time control, 72
+    observations.
+  \item
+    \texttt{meta\_opening\_month\_tc} (\texttt{mom\_tc}): month * time
+    control * opening, 130,672 observations.
+  \end{itemize}
+\item
+  Time-usage tables from \texttt{moves\_meta}:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    \texttt{moves\_month\_tc} (\texttt{mvm\_tc}) month * time control,
+    72 observations.
+  \item
+    \texttt{player\_time\_month\_tc} (\texttt{ptm\_tc}): player * month
+    * time control, 1,038,050 observations.
+  \end{itemize}
+\end{itemize}
+
+The pipeline logs session and version info for both R and Python and
+records checksums for downloaded raw files to help with reproducibility.
+
+\subsection{Variables}\label{variables}
+
+This project is working with multiple related-yet-distinct datasets. As
+such, it's very difficult to properly introduce the data without an
+according quantity of tables, which results in several pages worth of
+figures. My personal recommendation is to read through table 1, featured
+below, before moving straight to
+Section~\ref{sec-observations}.\footnote{I'm considering consolidating
+  the Variables and Observations sections into one, as I feel they're
+  somewhat redundant, or else perhaps moving the Variable tables
+  entirely into the appendix. I need to consult you for permission on
+  that first, though.} Most variable names are self-explanatory, so this
+section should largely be treated as a reference to skim through if a
+variable introduced later is confusing or unclear. Additionally, I
+elected to exclude tables \texttt{mm\_tc} and \texttt{mvm\_tc} from this
+section, as they're summary-level datasets that won't be explicitly
+modeled. Please refer to the \textless appendix placeholder; update when
+written\textgreater{} for information on them.
+
+\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{2.8cm} X}
+\caption{Core identifiers and categorical variables used across derived datasets.}\label{tab:variables-core}\\
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{3}{r}{\small\emph{Continued...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+\texttt{player} & categorical & Deterministic pseudonymous user ID (e.g., \texttt{u\us ...}). Appears in player-level tables (\texttt{pm}, \texttt{pm\us tc}, \texttt{pom\us tc}, \texttt{ptm\us tc}). \\
+\texttt{month} & categorical & Month of play as \texttt{YYYY-MM}. Primary time index for metagame and longitudinal analysis. \\
+\texttt{tc\us bucket} & categorical & Time control bucket: \texttt{blitz}, \texttt{rapid}, or \texttt{classical}. Used to stratify behavior by constraint level. \\
+\texttt{eco} & categorical & ECO opening code (e.g., \texttt{C41}). Standardized opening taxonomy useful for grouping openings into families. \\
+\texttt{opening} & categorical & Human-readable opening family name (e.g., \texttt{Philidor Defense}). Used in repertoire and metagame summaries. \\
+\end{xltabular}
+
+
+\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{2.6cm} X}
+\caption{Player-month outcome and covariate variables (tables: \texttt{pm}, \texttt{pm\us tc}).}\label{tab:variables-player-month}\\
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{3}{r}{\small\emph{Continued...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+\texttt{games} & numeric (count) & Number of games played in the month (and time-control bucket for \texttt{pm\us tc}). Also a reliability/weighting signal. \\
+\texttt{wins} & numeric (count) & Count of wins in the period. \\
+\texttt{losses} & numeric (count) & Count of losses in the period. \\
+\texttt{draws} & numeric (count) & Count of draws in the period. \\
+\texttt{win\us rate} & numeric (proportion) & Key performance metric: wins divided by games. Natural response variable for performance models. \\
+\texttt{draw\us rate} & numeric (proportion) & Draws divided by games. Useful because draw propensity varies by skill, time control, and strategic choices. \\
+\texttt{avg\us rating} & numeric & Primary skill proxy: average of the player’s pre-game rating across games in the period. Used for stratification and longitudinal change. \\
+\texttt{avg\us opp\us rating} & numeric & Average opponent rating. Contextualizes performance and approximates strength of schedule. \\
+\texttt{avg\us rating\us diff} & numeric & Average (player rating minus opponent rating). Summarizes typical matchup difficulty. \\
+\texttt{avg\us moves} & numeric & Average game length (moves). Proxy for style/complexity. \\
+\texttt{opening\us diversity} & numeric (count) & Number of distinct openings used in the period. Proxy for repertoire breadth. \\
+\texttt{top\us opening} & categorical & Most frequently played opening during the period (ties broken deterministically). \\
+\end{xltabular}
+
+\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{2.6cm} X}
+\caption{Player-opening table variables (table: \texttt{pom\us tc}).}\label{tab:variables-player-opening}\\
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{3}{r}{\small\emph{Continued...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+\texttt{games} & numeric (count) & Number of games the player played with the given opening in the month/time-control bucket. Used as a frequency weight. \\
+\texttt{win\us rate} & numeric (proportion) & Opening-specific win rate for the player and period. Used to study effectiveness conditional on opening. \\
+\texttt{draw\us rate} & numeric (proportion) & Opening-specific draw rate. Helps characterize risk profile and style. \\
+\texttt{avg\us rating} & numeric & Average player rating in games where the opening was played. Enables comparison of opening choice across skill. \\
+\texttt{avg\us rating\us diff} & numeric & Average rating difference in games where the opening was played. Captures whether openings are used in tougher/easier matchups. \\
+\end{xltabular}
+
+
+\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{2.6cm} X}
+\caption{Player time-use table variables (table: \texttt{ptm\us tc}).}\label{tab:variables-player-time}\\
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{3}{r}{\small\emph{Continued...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+\texttt{move\us rows} & numeric (count) & Number of move observations contributing to the summary (after sampling and filtering). Reliability signal. \\
+\texttt{games} & numeric (count) & Number of distinct games contributing move records for the player-month-time-control group. \\
+\texttt{avg\us time\us spent} & numeric (seconds) & Mean time spent per move. Captures typical deliberation time. \\
+\texttt{median\us time\us spent} & numeric (seconds) & Median time spent per move; robust to outliers and occasional long thinks. \\
+\texttt{p90\us time\us spent} & numeric (seconds) & 90th percentile of time spent per move. Measures tendency for occasional deep computation. \\
+\texttt{avg\us clock\us after} & numeric (seconds) & Mean remaining clock time after moves. Proxy for time management and pacing. \\
+\texttt{low\us time\us rate} & numeric (proportion) & Fraction of moves under a low-time threshold. Proxy for time trouble frequency. \\
+\texttt{avg\us rating} & numeric & Average player rating across move records in the group; allows stratification by skill. \\
+\texttt{avg\us rating\us diff} & numeric & Average rating difference across the move sample; controls for opponent strength effects. \\
+\texttt{avg\us time\us opening} & numeric (seconds) & Average time spent per move during the opening phase (if phase segmentation is available; game phases are defined by chess-engine analysis). \\
+\texttt{avg\us time\us middlegame} & numeric (seconds) & Average time spent per move during middlegame phase (may be missing for very short games). \\
+\texttt{avg\us time\us endgame} & numeric (seconds) & Average time spent per move during endgame phase (often missing because many games never reach endgame). \\
+\end{xltabular}
+
+\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{2.6cm} X}
+\caption{Metagame opening table variables (table: \texttt{mom\us tc}).}\label{tab:variables-metagame-opening}\\
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Variable} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{3}{r}{\small\emph{Continued...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+\texttt{games} & numeric (count) & Number of sampled games for the opening within month and time control. Precision/support indicator. \\
+\texttt{share} & numeric (proportion) & Core metagame measure: fraction of games using the opening within a month/time-control bucket. Tracks adoption shifts. \\
+\texttt{white\us win\us rate} & numeric (proportion) & Fraction of games where White wins. Used for opening-level success patterns and color asymmetries. \\
+\texttt{black\us win\us rate} & numeric (proportion) & Fraction of games where Black wins. Complements White win rate. \\
+\texttt{draw\us rate} & numeric (proportion) & Fraction of games drawn. Draw propensity varies by opening and time control. \\
+\texttt{upset\us rate} & numeric (proportion) & Fraction of games where the lower-rated player wins (pipeline definition). Proxy for volatility/competitiveness. \\
+\texttt{avg\us abs\us rating\us diff} & numeric & Mean absolute rating gap between players in the opening/month/tc group. Context for outcome rates. \\
+\texttt{avg\us moves} & numeric & Mean game length for the opening/month/tc group. Proxy for complexity and style at population level. \\
+\end{xltabular}
+
+\subsection{Observations}\label{sec-observations}
+
+Each derived dataset is organized at a different unit of analysis (e.g.,
+player-by-month or opening-by-month). In all cases, the raw unit of data
+is a rated chess game from the Lichess public database, but the pipeline
+aggregates games (and, for time-use, moves) into analysis-ready
+summaries. Because many variables overlap across tables, the observation
+structure can be summarized with a small set of representative row
+types. The examples below demonstrate the core units: (1) player-period
+summaries (with optional time-use extensions), (2) player opening-level
+summaries, and (3) population-level metagame summaries for openings.
+
+\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.4cm} X}
+\caption{Sample observation for player-period outcome summaries (tables: \texttt{pm}, \texttt{pm\us tc}).}\label{tab:obs-player-period-outcomes}\\
+\toprule
+\textbf{Field} & \textbf{Example Value/Meaning} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Field} & \textbf{Example Value/Meaning} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{2}{r}{\small\emph{Continued...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+\texttt{player} & \texttt{u\us 0001cf80083d0517} (stable pseudonymous identifier) \\
+\texttt{month} & \texttt{2024-12} (calendar month) \\
+\texttt{tc\us bucket} & \texttt{rapid} (present in \texttt{pm\us tc}; omitted in \texttt{pm}) \\
+\texttt{games} & 5 (total games in this player-month-(tc) group) \\
+\texttt{wins} & 4 \\
+\texttt{losses} & 0 \\
+\texttt{draws} & 1 \\
+\texttt{win\us rate} & 0.80 (wins / games) \\
+\texttt{draw\us rate} & 0.20 (draws / games) \\
+\texttt{avg\us rating} & 1544.0 (mean pre-game rating across games) \\
+\texttt{avg\us opp\us rating} & 1503.2 (mean opponent rating across games) \\
+\texttt{avg\us rating\us diff} & 40.8 (mean rating difference: player minus opponent) \\
+\texttt{avg\us moves} & 40.4 (mean game length in moves) \\
+\texttt{opening\us diversity} & 4 (distinct openings played in the group) \\
+\texttt{top\us opening} & \texttt{Ponziani Opening: Jaenisch Counterattack} (most frequent opening) \\
+\end{xltabular}
+
+\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.4cm} X}
+\caption{Sample observation for player-period time-use summaries (table: \texttt{ptm\us tc}).}\label{tab:obs-player-timeuse}\\
+\toprule
+\textbf{Field} & \textbf{Example Value/Meaning} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Field} & \textbf{Example Value/Meaning} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{2}{r}{\small\emph{Continued...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+\texttt{player} & \texttt{u\us 00004578077e9fa4} (stable pseudonymous identifier) \\
+\texttt{month} & \texttt{2024-08} \\
+\texttt{tc\us bucket} & \texttt{blitz} \\
+\texttt{move\us rows} & 70 (number of move records contributing to this summary) \\
+\texttt{games} & 1 (distinct games represented among the sampled moves) \\
+\texttt{avg\us time\us spent} & 1.66 seconds (mean time spent per move) \\
+\texttt{median\us time\us spent} & 1.0 seconds (median time spent per move) \\
+\texttt{p90\us time\us spent} & 3.1 seconds (90th percentile time spent per move) \\
+\texttt{avg\us clock\us after} & 122.5 seconds (mean remaining clock after moves) \\
+\texttt{low\us time\us rate} & 0.00 (share of moves flagged as low-time) \\
+\texttt{avg\us rating} & 1677.0 (mean pre-move rating across sampled moves) \\
+\texttt{avg\us rating\us diff} & 11.0 (mean rating difference across sampled moves) \\
+\texttt{avg\us time\us opening} & 0.9 seconds (mean time spent in opening phase) \\
+\texttt{avg\us time\us middlegame} & 2.2 seconds (mean time spent in middlegame phase) \\
+\texttt{avg\us time\us endgame} & 1.64 seconds (mean time spent in endgame phase; may be missing) \\
+\end{xltabular}
+
+\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.4cm} X}
+\caption{Sample observations for opening-level summaries: player repertoire entries (\texttt{pom\us tc}) and population metagame cells (\texttt{mom\us tc}).}\label{tab:obs-opening-level}\\
+\toprule
+\textbf{Field} & \textbf{Example Value/Meaning} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Field} & \textbf{Example Value/Meaning} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{2}{r}{\small\emph{Continued...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+\multicolumn{2}{l}{\textbf{Player opening summary (table: \texttt{pom\us tc})}} \\
+\texttt{player} & \texttt{u\us 0001cf80083d0517} \\
+\texttt{month} & \texttt{2024-11} \\
+\texttt{tc\us bucket} & \texttt{blitz} \\
+\texttt{eco} & \texttt{B13} \\
+\texttt{opening} & \texttt{Caro-Kann Defense: Exchange Variation} \\
+\texttt{games} & 4 (games where this player used the opening in this month/tc) \\
+\texttt{win\us rate} & 0.50 (opening-conditional win rate for the player) \\
+\texttt{draw\us rate} & 0.00 (opening-conditional draw rate for the player) \\
+\texttt{avg\us rating} & 1965.3 (mean rating in games using this opening) \\
+\texttt{avg\us rating\us diff} & 12.0 (mean rating difference in those games) \\
+
+\midrule
+\multicolumn{2}{l}{\textbf{Population opening summary (table: \texttt{mom\us tc})}} \\
+\texttt{month} & \texttt{2024-01} \\
+\texttt{tc\us bucket} & \texttt{blitz} \\
+\texttt{eco} & \texttt{C41} \\
+\texttt{opening} & \texttt{Philidor Defense} \\
+\texttt{games} & 8{,}825 (sampled games using this opening in the month/tc group) \\
+\texttt{share} & 0.0189 (opening share of the month/tc metagame) \\
+\texttt{white\us win\us rate} & 0.512 (fraction of games White wins) \\
+\texttt{black\us win\us rate} & 0.442 (fraction of games Black wins) \\
+\texttt{draw\us rate} & 0.0466 (fraction drawn) \\
+\texttt{upset\us rate} & 0.436 (fraction where lower-rated player wins) \\
+\texttt{avg\us abs\us rating\us diff} & 50.2 (mean rating gap magnitude) \\
+\texttt{avg\us moves} & 35.5 (mean game length) \\
+\end{xltabular}
+
+Together, these observation types support longitudinal player
+performance modeling (\texttt{pm}, \texttt{pm\_tc}), repertoire/style
+measurement from opening choice (\texttt{pom\_tc}), metagame dynamics
+via opening adoption and outcomes (\texttt{mom\_tc}), and
+bounded-rationality/time-management analyses using move-time features
+(\texttt{ptm\_tc}).
+
+\subsection{Cleaning}\label{cleaning}
+
+A large amount of cleaning was performed during the pipeline's parsing
+steps. The filtering and deterministic sampling was already touched upon
+in \#sec-source, but additional standardization and feature construction
+include:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{TimeControl} tag parsed into:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    \texttt{initial} (seconds).
+  \item
+    \texttt{increment} (seconds).
+  \item
+    \texttt{tc\_bucket} (\textless{} 180 = bullet, \textless{} 600 =
+    blitz, \textless{} 1800 = rapid, else classical),
+  \end{itemize}
+\item
+  Converted PGN result strings into:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    \texttt{winner} (white/black/draw).
+  \item
+    \texttt{score\_white} (1/0.5/0).
+  \end{itemize}
+\item
+  Computed upset indicators using ratings:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    \texttt{rating\_diff} = \texttt{white\_rating} -
+    \texttt{black\ rating}.
+  \item
+    \texttt{abs\_rating\_diff}
+  \item
+    \texttt{is\_upset}
+  \end{itemize}
+\item
+  Game-length variables:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    Computed \texttt{piles} and \texttt{moves} from move sequences (used
+    to construct final datasets).
+  \end{itemize}
+\end{itemize}
+
+The information was then restructured and aggregated into a tidy format.
+
+\section{Exploratory Data Analysis}\label{exploratory-data-analysis}
+
+Show the initial graphs and basic analysis methods used to determine
+your methodology
+
+\subsection{Interesting EDA 1 (Change
+name)}\label{interesting-eda-1-change-name}
+
+Show some graph or numerical summary that imparts an interesting idea
+about the data set
+
+\subsection{Interesting EDA 2 (Change
+name)}\label{interesting-eda-2-change-name}
+
+Show some graph or numerical summary that imparts an interesting idea
+about the data set
+
+\newpage
+
+\section{Methodology}\label{methodology}
+
+Describe the methods used to analyze the data. Do not discuss the
+analysis itself. Make sure to discuss any train/test data splitting
+here.
+
+\subsection{Data Tranformations (if
+applicable)}\label{data-tranformations-if-applicable}
+
+Describe any transformation you did to the data to assist in the
+analyzing of the data such as creating dummy variables.
+
+\subsection{Types of Models}\label{types-of-models}
+
+Describe how many different models you used and why.
+
+\subsubsection{Model 1 (Change to appropriate
+name)}\label{model-1-change-to-appropriate-name}
+
+Describe why you used model type one. You do not need to include a new
+section for every iteration of the same model type. For example you do
+not need 4 sections if you have 4 linear models with 1, 2, 3, and 4
+independent variables.
+
+\subsubsection{Model 2 (Change to appropriate
+name)}\label{model-2-change-to-appropriate-name}
+
+Describe why you used model type two.
+
+\subsubsection{Model 3 (Change to appropriate
+name)}\label{model-3-change-to-appropriate-name}
+
+Describe why you used model type three.
+
+\subsubsection{Model 4 (Change to appropriate
+name)}\label{model-4-change-to-appropriate-name}
+
+Describe why you used model type four.
+
+\subsubsection{Model 5 (Change to appropriate
+name)}\label{model-5-change-to-appropriate-name}
+
+Describe why you used model type five.
+
+\subsubsection{Further Models}\label{further-models}
+
+If using more than 5 types of models, use this section to quickly
+discuss them here. These should only be models that you do not expect to
+be great.
+
+\subsection{Method of model selection}\label{method-of-model-selection}
+
+Describe how you determine which model you choose at the end. Should
+also describe why you chose this method.
+
+\newpage
+
+\section{Results}\label{results}
+
+Describe the results that you received from the methods described
+earlier.
+
+\subsection{Model 1 (Change to appropriate
+name)}\label{model-1-change-to-appropriate-name-1}
+
+Show the results for model type one. At least one fully written out
+model should be displayed for each model type.
+
+\subsection{Model 2 (Change to appropriate
+name)}\label{model-2-change-to-appropriate-name-1}
+
+Show the results for model type two.
+
+\subsection{etc}\label{etc}
+
+\subsection{Selected model}\label{selected-model}
+
+Display the table that shows the model selection. If using more than 10
+models only show the top 10 performing in the table, the full table
+should be in the appendix. The final model should be fully displayed.
+
+\newpage
+
+\section{Discussion}\label{discussion}
+
+\subsection{Final model interpolation}\label{final-model-interpolation}
+
+Discuss what information the selected model provides that may be new and
+interesting
+
+\subsection{Use of Model}\label{use-of-model}
+
+Describe how this model might be used by others.
+
+\subsection{Comparison}\label{comparison}
+
+Compare the things learned from this selected model to the previous
+information.
+
+\newpage
+
+\section{Furture Work}\label{furture-work}
+
+Discuss what work could be done with this model to make it better.
+
+\newpage
+
+\section{References}\label{references}
+
+List the reference used for your paper. This should include anything
+cited in your background section and the source of your data.
+
+\newpage
+
+\section{Appendix}\label{appendix}
+
+\subsection{Appendix A Graphs (Use appropriate
+name)}\label{appendix-a-graphs-use-appropriate-name}
+
+\subsubsection{A.1 (Use appropriate
+name)}\label{a.1-use-appropriate-name}
+
+If showing multiple graphs make sure to index them by 0.1 each
+
+\newpage
+
+\subsection{Appendix B Tables (Use appropriate
+name)}\label{appendix-b-tables-use-appropriate-name}
+
+\subsubsection{Appendix B.1 (Use appropriate
+name)}\label{appendix-b.1-use-appropriate-name}
+
+If showing multiple tables make sure to index them by 0.1 each
+
+\subsection{Code}\label{code}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\FunctionTok{library}\NormalTok{(tidyverse)}
+\CommentTok{\# Reason for library ...}
+\CommentTok{\#library(...)}
+\CommentTok{\# Reason for library ...}
+\CommentTok{\#library(...)}
+
+\CommentTok{\# Set seed is used because question ... uses a random generator}
+\FunctionTok{set.seed}\NormalTok{(}\DecValTok{123}\NormalTok{)}
+\CommentTok{\# Load cleaned data here. If cleaning was required make sure to have a separate r file for the cleaning.}
+\CommentTok{\# Use this code to display useful graphs that do not belong in the body of the paper.}
+\CommentTok{\# For example use this area for model validation graphs like residual versus fit.}
+\CommentTok{\# Use this area to show results that are in table format}
+\CommentTok{\# Write your cleaning code here}
+\end{Highlighting}
+\end{Shaded}
+
+
+
+  \bibliography{references.bib}
+
+
+
+\end{document}

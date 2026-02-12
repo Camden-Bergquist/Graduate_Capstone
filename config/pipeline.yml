@@ -1,0 +1,73 @@
+months:
+  - "2024-01"
+  - "2024-02"
+  - "2024-03"
+  - "2024-04"
+  - "2024-05"
+  - "2024-06"
+  - "2024-07"
+  - "2024-08"
+  - "2024-09"
+  - "2024-10"
+  - "2024-11"
+  - "2024-12"
+  - "2025-01"
+  - "2025-02"
+  - "2025-03"
+  - "2025-04"
+  - "2025-05"
+  - "2025-06"
+  - "2025-07"
+  - "2025-08"
+  - "2025-09"
+  - "2025-10"
+  - "2025-11"
+  - "2025-12"
+
+filters:
+  tc_buckets: ["blitz", "rapid", "classical"]
+  min_rating: 800
+  max_rating: 2600
+  drop_terminations: ["Aborted"]
+
+sampling:
+  meta:
+    hash_mod: 500
+    hash_keep: [0, 1, 2, 3, 4]
+
+  cohort:
+    player_hash_mod: 500
+    player_hash_keep: [0, 1, 2]
+
+  moves:
+    hash_mod: 10000
+    hash_keep: [0, 1, 2, 3, 4]
+    
+performance:
+  moves_chunk_size: 250000
+
+anonymization:
+  enabled: true
+  # Prefer putting the salt in an environment variable instead of here; set LICHESS_ANON_SALT in OS. 
+  # The field below is a fallback that `02_parse_pgn.py` uses if it can't find the environment variable.
+  salt: ""
+  truncate: 16
+
+parquet:
+  compression: "zstd" # "snappy" for faster writing but larger filesize
+
+
+paths:
+  raw_dir: "data/raw/lichess"
+  games_meta_dir: "data/derived/games_meta"
+  moves_meta_dir: "data/derived/moves_meta"
+  games_cohort_dir: "data/derived/games_cohort"
+  meta_month_tc_path: "data/derived/full_datasets/meta_month_tc.parquet"
+  meta_opening_month_tc_path: "data/derived/full_datasets/meta_opening_month_tc.parquet"
+  player_month_path: "data/derived/full_datasets/player_month.parquet"
+  player_month_tc_path: "data/derived/full_datasets/player_month_tc.parquet"
+  player_opening_month_tc_path: "data/derived/full_datasets/player_opening_month_tc.parquet"
+  moves_month_tc_path: "data/derived/full_datasets/moves_month_tc.parquet"
+  player_time_month_tc_path: "data/derived/full_datasets/player_time_month_tc.parquet"
+  run_info_dir: "data/derived/run_info"
+  checksums_csv: "config/checksums.csv"

@@ -1,0 +1,45 @@
+---
+title: "Data Pipeline"
+format: html
+---
+
+```{r Setup}
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+getwd()
+
+library(tidyverse)
+library(arrow)
+```
+
+```{r Download Script}
+setwd("..")
+# system("Rscript scripts/01_download.R")  
+```
+
+```{r Parsing Script}
+setwd("..")
+
+# Single-process test:
+# system("py scripts/02_parse_pgn.py --no-parallel --months 2024-01")
+
+# Standard script run:
+# Please use the test run above first and update the number of workers according to how well your machine handles it; 24 is a lot.
+system("py scripts/02_parse_pgn.py --workers 24")
+```
+
+```{r Aggregation/Cleaning Script}
+setwd("..")
+system("Rscript scripts/03_build_datasets.R")
+
+```
+
+```{r Inspect Data}
+pm <- read_parquet("../data/derived/full_datasets/player_month.parquet")
+pm_tc <- read_parquet("../data/derived/full_datasets/player_month_tc.parquet")
+pom_tc <- read_parquet("../data/derived/full_datasets/player_opening_month_tc.parquet")
+ptm_tc <- read_parquet("../data/derived/full_datasets/player_time_month_tc.parquet")
+mm_tc <- read_parquet("../data/derived/full_datasets/meta_month_tc.parquet")
+mom_tc <- read_parquet("../data/derived/full_datasets/meta_opening_month_tc.parquet")
+mvm_tc <- read_parquet("../data/derived/full_datasets/moves_month_tc.parquet")
+```
+
