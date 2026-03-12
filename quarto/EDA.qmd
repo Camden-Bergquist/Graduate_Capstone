@@ -1,0 +1,1273 @@
+---
+title: "EDA"
+format: html
+---
+
+```{r Setup}
+library(arrow)
+library(DBI)
+library(duckdb)
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(ggthemes)
+
+# Paths (adjust if needed)
+base_dir <- "../data/derived/full_datasets"
+paths <- list(
+  pm = file.path(base_dir, "player_month.parquet"),
+  pm_tc = file.path(base_dir, "player_month_tc.parquet"),
+  pom_tc = file.path(base_dir, "player_opening_month_tc.parquet"),
+  ptm_tc = file.path(base_dir, "player_time_month_tc.parquet"),
+  mom_tc = file.path(base_dir, "meta_opening_month_tc.parquet")
+)
+
+con <- dbConnect(duckdb(), dbdir=":memory:")
+on.exit(dbDisconnect(con, shutdown=TRUE), add=TRUE)
+
+# Helper: safe read_parquet path quoting
+qpath <- function(p) paste0("'", gsub("'", "''", normalizePath(p, winslash="/", mustWork=FALSE)), "'")
+```
+
+```{r Coverage}
+cov_pm_tc <- dbGetQuery(con, sprintf("
+  SELECT month, tc_bucket, COUNT(*) AS n_rows
+  FROM read_parquet(%s)
+  GROUP BY month, tc_bucket
+  ORDER BY month, tc_bucket
+", qpath(paths$pm_tc)))
+
+cov_mom_tc <- dbGetQuery(con, sprintf("
+  SELECT month, tc_bucket, COUNT(*) AS n_rows
+  FROM read_parquet(%s)
+  GROUP BY month, tc_bucket
+  ORDER BY month, tc_bucket
+", qpath(paths$mom_tc)))
+
+ggplot(cov_pm_tc, aes(x = month, y = n_rows, group = tc_bucket, color = tc_bucket)) +
+  geom_line(linewidth = 1) +
+  coord_cartesian(clip = "off") +
+  labs(x = "Month", y = "Games (Player-Month-TC)", title = "Coverage of Player-Month-TC Table", color = "Time Control") +
+  scale_color_few(labels = c("Blitz", "Classical", "Rapid")) +
+  theme_few() + 
+    theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_line(linewidth = 0.3, colour = "grey85"),
+    panel.grid.minor = element_blank()
+  ) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+ggplot(cov_mom_tc, aes(x = month, y = n_rows, group = tc_bucket, color = tc_bucket)) +
+  geom_line() +
+  labs(x = "Month", y = "Rows (Opening-Month-TC)", title = "Coverage of Opening-Level Metagame Table", color = "Time Control") +
+  scale_color_discrete(labels = c("Blitz", "Rapid", "Classical")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+This reveals a pretty big oversight that I somehow forgot to account for. That being: The sampling method I implemented did not group by time control before collecting and parsing the data. As a consequence, this means that the number of observations for each time control are proportional to the full dataset; there's an inequality in the quantity of observations for each time control (particularly classical, which is much lower). I must decide whether it's worth my time to re-parse the data to rectify this or if it's okay to abandon the classical TC in some (but hopefully not all) cases.
+
+It's worth noting that the reason the parser doesn't group by time control first is because it does its hash-based sampling *before* unpacking each PGN and reading its header. Doing so massively improved parse time because the pipeline only has to process a small fraction of each month's dataset (compared to wasting a ton of time/compute by opening everything and then throwing upwards of 95% of it away), meaning this might just be something I have to live with. In either case, this should be addressed in the EDA section.
+
+```{r Opening Trends}
+top_openings <- dbGetQuery(con, sprintf("
+  WITH x AS (
+    SELECT opening, SUM(games) AS total_games
+    FROM read_parquet(%s)
+    WHERE tc_bucket='blitz' AND opening IS NOT NULL
+    GROUP BY opening
+  )
+  SELECT opening
+  FROM x
+  ORDER BY total_games DESC
+  LIMIT 8
+", qpath(paths$mom_tc)))
+
+open_list <- paste0("('", paste(gsub("'", "''", top_openings$opening), collapse="','"), "')")
+
+trend <- dbGetQuery(con, sprintf("
+  WITH filtered AS (
+    SELECT month, tc_bucket, opening, games
+    FROM read_parquet(%s)
+    WHERE tc_bucket='blitz'
+      AND opening IN %s
+      AND opening IS NOT NULL
+  ),
+  opening_level AS (
+    SELECT
+      month,
+      tc_bucket,
+      opening,
+      SUM(games) AS games
+    FROM filtered
+    GROUP BY month, tc_bucket, opening
+  )
+  SELECT
+    month,
+    tc_bucket,
+    opening,
+    games,
+    CAST(games AS DOUBLE) / SUM(games) OVER (PARTITION BY month, tc_bucket) AS share
+  FROM opening_level
+  ORDER BY month, opening
+", qpath(paths$mom_tc), open_list))
+
+
+ggplot(trend, aes(x=month, y=share, color=opening, group=opening)) +
+  geom_line() +
+  scale_y_continuous(labels=percent_format(accuracy=0.1)) +
+  labs(x="Month", y="Share of Games", color = "Opening", 
+  title="Opening Share Over Time (Blitz)", subtitle = "Top Eight Openings in Terms of Game Share") +
+  scale_color_few() +
+  theme_few() +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_line(linewidth = 0.3, colour = "grey85"),
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom",
+    axis.text.x = element_text(angle=60, hjust=1)
+  )
+```
+
+I had a feeling that metagame drift wouldn't be crazy over only a two-month period, but the results surprised me. The code chunk above only produces one plot, but I checked all three and found that opening preferences are actually quite stable. As time controls give more time, the variance increases, from blitz being the most stable and classical the least. Were my only goal to answer this question, I would have sampled the first couple months over, say, a ten-year span rather than two full years, but I parsed and cleaned my data with a wide range of questions in mind, which necessarily weakens my ability to look into each specific question (address in EDA).
+
+- ANOVA?
+
+```{r Popularity vs Success}
+cross <- dbGetQuery(con, sprintf("
+  SELECT month, tc_bucket, opening, share, white_win_rate, draw_rate, upset_rate, games
+  FROM read_parquet(%s)
+  WHERE month='2025-06'
+    AND opening IS NOT NULL
+    AND games >= 200   -- threshold to avoid tiny groups
+", qpath(paths$mom_tc)))
+
+ggplot(cross, aes(x=share, y=white_win_rate)) +
+  geom_point(alpha=0.4) +
+  facet_wrap(~tc_bucket, scales="free_x") +
+  scale_x_continuous(labels=percent) +
+  labs(x="Opening Share", y="White Win Rate", title="Opening Popularity vs Success (Single-Month Sample)") +
+  theme_minimal()
+```
+
+- Possible Lichess analysis bias (e.g., high-success lines are traps which only get categorized if sprung, leading to abnormally-high win rates).
+- ELO/Glicko almost certainly influences this as well, since it's designed to make win rates converge to 50%.
+- Ultimately, this line of questioning isn't very interesting because of these factors; look into opening share by rating instead.
+
+```{r Games per Player Month}
+gdist <- dbGetQuery(con, sprintf("
+  SELECT games
+  FROM read_parquet(%s)
+", qpath(paths$pm)))
+
+ggplot(gdist, aes(x=games)) +
+  geom_histogram(bins = 400, fill = "steelblue", color = "steelblue") +
+  coord_cartesian(xlim = c(0, 250)) +
+  scale_y_continuous(labels = label_comma()) +
+  labs(x="Games per Player in any Given Month", y="Count", title="Player-Month Reliability Varies Widely") +
+  theme_minimal()
+```
+
+```{r Winrate by Rating}
+wr_bin <- dbGetQuery(con, sprintf("
+  SELECT
+    tc_bucket,
+    floor(avg_rating/100)*100 AS rating_bin,
+    AVG(win_rate) AS mean_win_rate,
+    COUNT(*) AS n_rows,
+    SUM(games) AS total_games
+  FROM read_parquet(%s)
+  GROUP BY tc_bucket, rating_bin
+  HAVING total_games >= 5000
+  ORDER BY tc_bucket, rating_bin
+", qpath(paths$pm_tc)))
+
+ggplot(wr_bin, aes(x=rating_bin, y=mean_win_rate)) +
+  geom_line() +
+  facet_wrap(~tc_bucket) +
+  labs(x="Rating bin", y="Mean win rate", title="Win rate patterns across rating strata and time controls")
+```
+
+```{r Rating Changes}
+chg <- dbGetQuery(con, sprintf("
+  WITH x AS (
+    SELECT player, month, avg_rating
+    FROM read_parquet(%s)
+  ),
+  y AS (
+    SELECT
+      player,
+      month,
+      avg_rating,
+      LAG(avg_rating) OVER (PARTITION BY player ORDER BY month) AS prev_rating
+    FROM x
+  )
+  SELECT (avg_rating - prev_rating) AS d_rating
+  FROM y
+  WHERE prev_rating IS NOT NULL AND d_rating >= -300 AND d_rating <= 300
+", qpath(paths$pm)))
+
+ggplot(chg, aes(x=d_rating)) +
+  geom_histogram(bins=80, fill = "steelblue", color = "steelblue") +
+  labs(x="Month-to-Month Change in Average Rating", y="Count", title="Distribution of Within-Player Rating Change") +
+  theme_few()
+```
+
+```{r Time Use}
+time_bin <- dbGetQuery(con, sprintf("
+  SELECT
+    tc_bucket,
+    floor(avg_rating/100)*100 AS rating_bin,
+    AVG(avg_time_spent) AS mean_time_spent,
+    SUM(move_rows) AS total_moves
+  FROM read_parquet(%s)
+  GROUP BY tc_bucket, rating_bin
+  HAVING total_moves >= 20000
+  ORDER BY tc_bucket, rating_bin
+", qpath(paths$ptm_tc)))
+
+ggplot(time_bin, aes(x=rating_bin, y=mean_time_spent)) +
+  geom_line() +
+  facet_wrap(~tc_bucket, scales="free_y") +
+  labs(x="Player Rating", y="Average Time per Move (Seconds)", title="Thinking Time Varies by Skill and Time Control") +
+  theme_minimal()
+```
+
+```{r Opening by Rating}
+# settings
+tc_use <- "blitz"   # "blitz" / "rapid" / "classical"
+bin_width <- 200        # try 100 for more detail, 200 for smoother
+top_k <- 8             # number of openings to plot
+min_bin_total <- 2000  # min player-games in a rating bin (stability filter)
+
+# 1) pick top openings within tc_bucket (weighted by games)
+top_openings <- dbGetQuery(con, sprintf("
+  WITH x AS (
+    SELECT opening, SUM(games) AS total_games
+    FROM read_parquet(%s)
+    WHERE tc_bucket = '%s'
+      AND opening IS NOT NULL
+    GROUP BY opening
+  )
+  SELECT opening
+  FROM x
+  ORDER BY total_games DESC
+  LIMIT %d
+", qpath(paths$pom_tc), tc_use, top_k))
+
+open_list <- paste0(
+  "('", paste(gsub("'", "''", top_openings$opening), collapse="','"), "')"
+)
+
+# 2) compute opening share within rating bins
+#    - rating_bin_lo is based on avg_rating from the player-opening aggregation
+#    - use SUM(games) as weights so "share" is in terms of player-games
+trend_rating <- dbGetQuery(con, sprintf("
+  WITH base AS (
+    SELECT
+      tc_bucket,
+      opening,
+      avg_rating,
+      games
+    FROM read_parquet(%s)
+    WHERE tc_bucket = '%s'
+      AND opening IN %s
+      AND opening IS NOT NULL
+      AND avg_rating IS NOT NULL
+      AND games IS NOT NULL
+  ),
+  binned AS (
+    SELECT
+      opening,
+      CAST(FLOOR(avg_rating / %d) * %d AS INTEGER) AS rating_bin_lo,
+      SUM(games) AS player_games
+    FROM base
+    GROUP BY opening, rating_bin_lo
+  ),
+  totals AS (
+    SELECT
+      rating_bin_lo,
+      SUM(player_games) AS bin_total
+    FROM binned
+    GROUP BY rating_bin_lo
+  )
+  SELECT
+    b.rating_bin_lo,
+    (b.rating_bin_lo + %d - 1) AS rating_bin_hi,
+    b.opening,
+    b.player_games,
+    t.bin_total,
+    CAST(b.player_games AS DOUBLE) / t.bin_total AS share
+  FROM binned b
+  JOIN totals t USING (rating_bin_lo)
+  WHERE t.bin_total >= %d
+  ORDER BY b.rating_bin_lo, b.opening
+", qpath(paths$pom_tc), tc_use, open_list,
+   bin_width, bin_width, bin_width, min_bin_total))
+
+# nicer x labels
+trend_rating <- trend_rating %>%
+  mutate(
+    rating_bin = paste0(rating_bin_lo, "\u2013", rating_bin_hi),
+    rating_bin = factor(rating_bin, levels = unique(rating_bin))
+  )
+
+# plot
+ggplot(trend_rating, aes(x = rating_bin, y = share, color = opening, group = opening)) +
+  geom_line() +
+  geom_point(size = 1) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(
+    x = "Rating",
+    y = "Share of Player-Games",
+    title = paste0("Opening Share by Rating (", tc_use, ")"),
+    color = "Opening"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    legend.position = "bottom"
+  )
+```
+
+```{r Months Observed per Player}
+panel_len <- dbGetQuery(con, sprintf("
+  WITH x AS (
+    SELECT player, COUNT(DISTINCT month) AS n_months
+    FROM read_parquet(%s)
+    GROUP BY player
+  )
+  SELECT n_months, COUNT(*) AS n_players
+  FROM x
+  GROUP BY n_months
+  ORDER BY n_months
+", qpath(paths$pm)))
+
+ggplot(panel_len, aes(x = n_months, y = n_players)) +
+  geom_col(fill = "steelblue", color = "steelblue") +
+  scale_y_continuous() +
+  labs(x = "Months Observed per Player", y = "Players",
+       title = "Panel Depth: How Long Players Remain Observable") +
+  theme_few()
+```
+
+```{r Consecutive Streaks}
+streaks <- dbGetQuery(con, sprintf("
+  WITH x AS (
+    SELECT player, month
+    FROM read_parquet(%s)
+    GROUP BY player, month
+  ),
+  y AS (
+    SELECT
+      player,
+      month,
+      STRPTIME(month || '-01', '%%Y-%%m-%%d') AS mdate
+    FROM x
+  ),
+  z AS (
+    SELECT
+      player,
+      mdate,
+      mdate - INTERVAL '1 month' * ROW_NUMBER() OVER (PARTITION BY player ORDER BY mdate) AS grp
+    FROM y
+  ),
+  streaks AS (
+    SELECT player, COUNT(*) AS streak_len
+    FROM z
+    GROUP BY player, grp
+  )
+  SELECT streak_len, COUNT(*) AS n_streaks
+  FROM streaks
+  GROUP BY streak_len
+  ORDER BY streak_len
+", qpath(paths$pm)))
+
+ggplot(streaks, aes(x=streak_len, y=n_streaks)) +
+  geom_col(fill = "steelblue", color = "steelblue") +
+  scale_y_continuous() +
+  labs(x="Consecutive-month streak length", y="Streaks",
+       title="How often do we observe players in consecutive months?") +
+  theme_minimal()
+
+```
+
+```{r Coverage Heatmap}
+cov_heat <- dbGetQuery(con, sprintf("
+  SELECT
+    tc_bucket,
+    month,
+    FLOOR(avg_rating/200)*200 AS rating_bin,
+    SUM(games) AS total_games
+  FROM read_parquet(%s)
+  GROUP BY tc_bucket, month, rating_bin
+", qpath(paths$pm_tc)))
+
+ggplot(cov_heat, aes(x=month, y=rating_bin, fill=total_games)) +
+  geom_tile() +
+  facet_wrap(~tc_bucket, scales="free_x") +
+  labs(x="Month", y="Rating bin", title="Coverage heatmap (player-games)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle=60, hjust=1))
+
+```
+
+```{r Games per Month vs Volatility in Delta-Rating}
+vol <- dbGetQuery(con, sprintf("
+  WITH x AS (
+    SELECT player, month, games, avg_rating
+    FROM read_parquet(%s)
+  ),
+  y AS (
+    SELECT
+      player,
+      month,
+      games,
+      avg_rating,
+      LAG(avg_rating) OVER (PARTITION BY player ORDER BY month) AS prev_rating
+    FROM x
+  )
+  SELECT
+    games,
+    ABS(avg_rating - prev_rating) AS abs_d_rating
+  FROM y
+  WHERE prev_rating IS NOT NULL
+", qpath(paths$pm)))
+
+ggplot(vol, aes(x = games, y = abs_d_rating)) +
+  geom_point(alpha = 0.15) +
+  scale_x_continuous(trans = "log10") +
+  labs(x = "Games per Month (Log-Transformed)", y = "Absolute Change in Rating (|Δ|)",
+       title = "Monthly Rating Volatility Shrinks as Game Volume Rises",
+       subtitle = "Log-Transformed for Legibility") +
+  theme_few()
+```
+
+```{r Delta-Rating by Rating Bin}
+chg_bin <- dbGetQuery(con, sprintf("
+  WITH x AS (
+    SELECT player, month, avg_rating
+    FROM read_parquet(%s)
+  ),
+  y AS (
+    SELECT
+      player,
+      month,
+      avg_rating,
+      LAG(avg_rating) OVER (PARTITION BY player ORDER BY month) AS prev_rating
+    FROM x
+  )
+  SELECT
+    FLOOR(prev_rating/200)*200 AS rating_bin,
+    (avg_rating - prev_rating) AS d_rating
+  FROM y
+  WHERE prev_rating IS NOT NULL
+", qpath(paths$pm)))
+
+ggplot(chg_bin, aes(x=d_rating)) +
+  geom_histogram(bins=60) +
+  facet_wrap(~rating_bin, scales="free_y") +
+  labs(x="Δ rating", y="Count",
+       title="Rating change distribution varies by starting skill") +
+  theme_minimal()
+
+```
+
+```{r Opening Diversity vs Rating Change}
+div_vs_change <- dbGetQuery(con, sprintf("
+  WITH x AS (
+    SELECT player, month, opening_diversity, games, avg_rating
+    FROM read_parquet(%s)
+  ),
+  y AS (
+    SELECT
+      player,
+      month,
+      opening_diversity,
+      games,
+      avg_rating,
+      LEAD(avg_rating) OVER (PARTITION BY player ORDER BY month) AS next_rating
+    FROM x
+  )
+  SELECT
+    opening_diversity,
+    games,
+    (next_rating - avg_rating) AS d_rating_next
+  FROM y
+  WHERE next_rating IS NOT NULL
+", qpath(paths$pm)))
+
+ggplot(div_vs_change, aes(x=opening_diversity, y=d_rating_next)) +
+  geom_point(alpha=0.12) +
+  geom_smooth(se=FALSE) +
+  labs(x="Opening diversity (month)", y="Next-month Δ rating",
+       title="Is repertoire breadth associated with improvement?") +
+  theme_minimal()
+
+```
+
+```{r Specialist vs Generalist}
+conc <- dbGetQuery(con, sprintf("
+  WITH po AS (
+    SELECT player, month, tc_bucket, opening, games
+    FROM read_parquet(%s)
+  ),
+  tot AS (
+    SELECT player, month, tc_bucket, SUM(games) AS total_games
+    FROM po
+    GROUP BY player, month, tc_bucket
+    HAVING SUM(games) >= 5
+  ),
+  top AS (
+    SELECT
+      player, month, tc_bucket,
+      MAX(games) AS top_opening_games
+    FROM po
+    GROUP BY player, month, tc_bucket
+  )
+  SELECT
+    t.player, t.month, t.tc_bucket,
+    top_opening_games,
+    total_games,
+    CAST(top_opening_games AS DOUBLE)/total_games AS top_opening_share
+  FROM top
+  JOIN tot t USING (player, month, tc_bucket)
+", qpath(paths$pom_tc)))
+
+ggplot(conc, aes(x = top_opening_share)) +
+  geom_histogram(bins = 50, fill = "steelblue", color = "steelblue") +
+  scale_x_continuous(labels=percent_format(accuracy = 1)) +
+  labs(x="Share of Games in Most-Played Opening", y = "Player-Months",
+       title="Repertoire Concentration") +
+  theme_few()
+
+```
+
+```{r Opening Switching vs Improvement}
+switch <- dbGetQuery(con, sprintf("
+  WITH x AS (
+    SELECT player, month, top_opening, avg_rating, games
+    FROM read_parquet(%s)
+  ),
+  y AS (
+    SELECT
+      player,
+      month,
+      top_opening,
+      avg_rating,
+      LEAD(avg_rating) OVER (PARTITION BY player ORDER BY month) AS next_rating,
+      LAG(top_opening) OVER (PARTITION BY player ORDER BY month) AS prev_opening
+    FROM x
+  )
+  SELECT
+    CASE WHEN prev_opening IS NULL THEN NULL
+         WHEN top_opening = prev_opening THEN 0 ELSE 1 END AS switched_opening,
+    (next_rating - avg_rating) AS d_rating_next
+  FROM y
+  WHERE next_rating IS NOT NULL AND prev_opening IS NOT NULL
+", qpath(paths$pm)))
+
+ggplot(switch, aes(x=factor(switched_opening), y=d_rating_next)) +
+  geom_boxplot() +
+  labs(x="Changed top opening vs previous month", y="Next-month Δ rating",
+       title="Does changing openings relate to improvement?") +
+  theme_minimal()
+
+```
+
+```{r Time Use vs Progression}
+ltr <- dbGetQuery(con, sprintf("
+  WITH x AS (
+    SELECT player, month, tc_bucket, low_time_rate, avg_rating, move_rows
+    FROM read_parquet(%s)
+  ),
+  y AS (
+    SELECT
+      player, month, tc_bucket, low_time_rate, avg_rating, move_rows,
+      LEAD(avg_rating) OVER (PARTITION BY player, tc_bucket ORDER BY month) AS next_rating
+    FROM x
+  )
+  SELECT
+    tc_bucket,
+    low_time_rate,
+    move_rows,
+    (next_rating - avg_rating) AS d_rating_next
+  FROM y
+  WHERE next_rating IS NOT NULL AND low_time_rate IS NOT NULL
+", qpath(paths$ptm_tc)))
+
+ggplot(ltr, aes(x=low_time_rate, y=d_rating_next)) +
+  geom_point(alpha=0.12) +
+  geom_smooth(se=FALSE) +
+  facet_wrap(~tc_bucket) +
+  scale_x_continuous(labels=percent_format(accuracy=1)) +
+  labs(x="Low-time rate", y="Next-month Δ rating",
+       title="Is time trouble associated with slower improvement?") +
+  theme_minimal()
+
+```
+
+```{r Allocation Profile by Rating}
+phase <- dbGetQuery(con, sprintf("
+  SELECT
+    tc_bucket,
+    FLOOR(avg_rating/200)*200 AS rating_bin,
+    AVG(avg_time_opening) AS t_open,
+    AVG(avg_time_middlegame) AS t_mid,
+    AVG(avg_time_endgame) AS t_end,
+    SUM(move_rows) AS total_moves
+  FROM read_parquet(%s)
+  GROUP BY tc_bucket, rating_bin
+  HAVING total_moves >= 10000
+  ORDER BY tc_bucket, rating_bin
+", qpath(paths$ptm_tc)))
+
+phase_long <- phase |>
+  pivot_longer(cols=c(t_open, t_mid, t_end),
+                      names_to="phase", values_to="sec")
+
+ggplot(phase_long, aes(x=rating_bin, y=sec, color=phase, group=phase)) +
+  geom_line() +
+  facet_wrap(~factor(tc_bucket, levels = c("blitz", "rapid", "classical")), scales="free_y", labeller = as_labeller(c(
+      blitz = "Blitz",
+      rapid = "Rapid",
+      classical = "Classical"
+    ))) +
+  labs(x="Rating", y="Seconds per Move", color = "Phase",
+       title="Phase Time Allocation Changes With Skill") +
+  scale_color_few(labels = c("Endgame", "Middlegame", "Opening")) +
+    theme_few() + 
+    theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_line(linewidth = 0.3, colour = "grey85"),
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom"
+  )
+
+```
+
+```{r Missingness}
+miss <- dbGetQuery(con, sprintf("
+  SELECT
+    tc_bucket,
+    FLOOR(avg_rating/200)*200 AS rating_bin,
+    AVG(CASE WHEN avg_time_endgame IS NULL THEN 1 ELSE 0 END) AS endgame_missing_rate,
+    SUM(move_rows) AS total_moves
+  FROM read_parquet(%s)
+  GROUP BY tc_bucket, rating_bin
+  HAVING total_moves >= 20000
+  ORDER BY tc_bucket, rating_bin
+", qpath(paths$ptm_tc)))
+
+ggplot(miss, aes(x=rating_bin, y=endgame_missing_rate)) +
+  geom_line() +
+  facet_wrap(~tc_bucket) +
+  scale_y_continuous(labels=percent_format(accuracy=1)) +
+  labs(x="Rating bin", y="Endgame metric missing rate",
+       title="Endgame phase metrics are missing non-randomly") +
+  theme_minimal()
+
+```
+
+```{r Distribution Sanity Checks}
+# How big is ptm_tc?
+dbGetQuery(con, sprintf("
+  SELECT COUNT(*) AS n
+  FROM read_parquet(%s)
+", qpath(paths$ptm_tc)))
+
+# Distribution sanity checks (games, move_rows, low_time_rate)
+dbGetQuery(con, sprintf("
+  SELECT
+    MIN(games) AS min_games,
+    APPROX_QUANTILE(games, 0.5) AS med_games,
+    APPROX_QUANTILE(games, 0.9) AS p90_games,
+    MAX(games) AS max_games,
+    MIN(move_rows) AS min_moves,
+    APPROX_QUANTILE(move_rows, 0.5) AS med_moves,
+    APPROX_QUANTILE(move_rows, 0.9) AS p90_moves,
+    MAX(move_rows) AS max_moves,
+    AVG(CASE WHEN low_time_rate = 0 THEN 1 ELSE 0 END) AS frac_ltr_zero
+  FROM read_parquet(%s)
+  WHERE low_time_rate IS NOT NULL
+", qpath(paths$ptm_tc)))
+
+# How many rows have a "next" month inside ptm_tc itself?
+dbGetQuery(con, sprintf("
+  WITH x AS (
+    SELECT player, month, tc_bucket, avg_rating
+    FROM read_parquet(%s)
+    WHERE avg_rating IS NOT NULL
+  ),
+  y AS (
+    SELECT *,
+      LEAD(avg_rating) OVER (PARTITION BY player, tc_bucket ORDER BY month) AS next_rating
+    FROM x
+  )
+  SELECT
+    COUNT(*) AS n_total,
+    SUM(CASE WHEN next_rating IS NOT NULL THEN 1 ELSE 0 END) AS n_with_next
+  FROM y
+", qpath(paths$ptm_tc)))
+
+```
+
+
+```{r LTR Bin}
+min_games_pm   <- 10     # require at least this many games in the month (across all TCs)
+min_moves_ptm  <- 45    # require at least this many move rows in the month (across all TCs)
+
+ltr_scatter_all <- dbGetQuery(con, sprintf("
+  WITH pm_tc AS (
+    SELECT
+      player,
+      month,
+      avg_rating,
+      games
+    FROM read_parquet(%s)
+    WHERE player IS NOT NULL
+      AND month  IS NOT NULL
+      AND avg_rating IS NOT NULL
+      AND games IS NOT NULL
+  ),
+  pm AS (
+    -- collapse across time controls using games-weighted avg_rating
+    SELECT
+      player,
+      month,
+      SUM(games) AS games_total,
+      SUM(avg_rating * games) / SUM(games) AS avg_rating_all
+    FROM pm_tc
+    GROUP BY player, month
+    HAVING SUM(games) >= %d
+  ),
+  pm_next AS (
+    SELECT
+      player,
+      month,
+      games_total,
+      avg_rating_all,
+      LEAD(avg_rating_all) OVER (PARTITION BY player ORDER BY month) AS next_rating_all
+    FROM pm
+  ),
+  delta AS (
+    SELECT
+      player,
+      month,
+      games_total,
+      avg_rating_all,
+      (next_rating_all - avg_rating_all) AS d_rating_next
+    FROM pm_next
+    WHERE next_rating_all IS NOT NULL
+  ),
+  ptm_tc AS (
+    SELECT
+      player,
+      month,
+      low_time_rate,
+      move_rows
+    FROM read_parquet(%s)
+    WHERE player IS NOT NULL
+      AND month  IS NOT NULL
+      AND low_time_rate IS NOT NULL
+      AND move_rows IS NOT NULL
+  ),
+  ptm AS (
+    -- collapse across time controls using move_rows-weighted low_time_rate
+    SELECT
+      player,
+      month,
+      SUM(move_rows) AS move_rows_total,
+      SUM(low_time_rate * move_rows) / SUM(move_rows) AS low_time_rate_all
+    FROM ptm_tc
+    GROUP BY player, month
+    HAVING SUM(move_rows) >= %d
+  )
+  SELECT
+    d.player,
+    d.month,
+    d.avg_rating_all,
+    d.games_total,
+    d.d_rating_next,
+    p.low_time_rate_all,
+    p.move_rows_total
+  FROM delta d
+  JOIN ptm p USING (player, month)
+", qpath(paths$pm_tc), min_games_pm,
+   qpath(paths$ptm_tc), min_moves_ptm))
+
+ggplot(ltr_scatter_all, aes(x = low_time_rate_all, y = d_rating_next)) +
+  geom_point(alpha = 0.25) +
+  scale_x_continuous(labels = percent_format(accuracy = 1)) +
+  ylim(-225, 225) +
+  labs(
+    x = "Low-Time Rate",
+    y = "Next-Month Δ Rating",
+    title = "Time Trouble vs Next-Month Rating Change",
+    subtitle = "Collapsed Across Time Controls"
+  ) +
+  theme_minimal()
+
+```
+
+```{r Switch 2}
+switch2 <- dbGetQuery(con, sprintf("
+  WITH x AS (
+    SELECT player, month, top_opening, avg_rating, games
+    FROM read_parquet(%s)
+    WHERE top_opening IS NOT NULL
+      AND avg_rating IS NOT NULL
+      AND games IS NOT NULL
+  ),
+  y AS (
+    SELECT *,
+      LEAD(avg_rating) OVER (PARTITION BY player ORDER BY month) AS next_rating,
+      LEAD(games) OVER (PARTITION BY player ORDER BY month) AS next_games,
+      LAG(top_opening) OVER (PARTITION BY player ORDER BY month) AS prev_opening
+    FROM x
+  )
+  SELECT
+    CAST(FLOOR(avg_rating/200)*200 AS INTEGER) AS rating_bin,
+    CASE WHEN top_opening = prev_opening THEN 0 ELSE 1 END AS switched_opening,
+    (next_rating - avg_rating) AS d_rating_next
+  FROM y
+  WHERE next_rating IS NOT NULL
+    AND prev_opening IS NOT NULL
+    AND games >= 20
+    AND next_games >= 20
+", qpath(paths$pm)))
+
+ggplot(switch2, aes(x=factor(switched_opening), y=d_rating_next)) +
+  geom_boxplot() +
+  facet_wrap(~rating_bin) +
+  labs(x="Changed top opening vs previous month", y="Next-month Δ rating",
+       title="Opening switching vs improvement (stable months only)") +
+  theme_minimal()
+
+```
+
+```{r Div Strata}
+div_strata <- dbGetQuery(con, sprintf("
+  WITH x AS (
+    SELECT player, month, opening_diversity, games, avg_rating
+    FROM read_parquet(%s)
+    WHERE opening_diversity IS NOT NULL
+      AND games IS NOT NULL
+      AND avg_rating IS NOT NULL
+  ),
+  y AS (
+    SELECT *,
+      LEAD(avg_rating) OVER (PARTITION BY player ORDER BY month) AS next_rating
+    FROM x
+  ),
+  z AS (
+    SELECT
+      CAST(FLOOR(avg_rating/200)*200 AS INTEGER) AS rating_bin,
+      CASE
+        WHEN games < 10 THEN '<10'
+        WHEN games < 25 THEN '10–24'
+        WHEN games < 60 THEN '25–59'
+        ELSE '60+'
+      END AS games_bin,
+      opening_diversity,
+      (next_rating - avg_rating) AS d_rating_next
+    FROM y
+    WHERE next_rating IS NOT NULL
+  )
+  SELECT
+    rating_bin,
+    games_bin,
+    opening_diversity,
+    AVG(d_rating_next) AS mean_d,
+    COUNT(*) AS n
+  FROM z
+  GROUP BY rating_bin, games_bin, opening_diversity
+  HAVING n >= 5
+  ORDER BY rating_bin, games_bin, opening_diversity
+", qpath(paths$pm)))
+
+div_strata <- div_strata |>
+  mutate(games_bin = factor(games_bin, levels = c("60+", "25–59", "10–24", "<10")))
+
+ggplot(div_strata, aes(x=opening_diversity, y=mean_d, color=games_bin)) +
+  geom_line(alpha = 1) +
+  facet_wrap(~rating_bin, scales="free_y") +
+  labs(x="Opening Diversity (Within-Month)", y="Mean Next-Month Δ Rating",
+       color="Games",
+       title="Opening Diversity vs Improvement",
+       subtitle = "Stratified by Games and Rating") +
+  scale_color_few() +
+  theme_few() + 
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_line(linewidth = 0.3, colour = "grey85"),
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom"
+  )
+
+```
+
+```{r D3}
+d3 <- dbGetQuery(con, sprintf("
+  WITH x AS (
+    SELECT player, month, avg_rating, games, opening_diversity
+    FROM read_parquet(%s)
+    WHERE avg_rating IS NOT NULL
+  ),
+  y AS (
+    SELECT *,
+      LEAD(avg_rating, 3) OVER (PARTITION BY player ORDER BY month) AS rating_3m
+    FROM x
+  )
+  SELECT
+    opening_diversity,
+    games,
+    (rating_3m - avg_rating) AS d_rating_3m
+  FROM y
+  WHERE rating_3m IS NOT NULL
+    AND games >= 15
+", qpath(paths$pm)))
+
+ggplot(d3, aes(x=opening_diversity, y=d_rating_3m)) +
+  geom_point(alpha=0.08) +
+  geom_smooth(se=FALSE) +
+  labs(x="Opening diversity", y="3-month Δ rating",
+       title="Repertoire breadth vs longer-horizon improvement") +
+  theme_minimal()
+
+```
+
+```{r Repertoire Churn vs Improvement}
+# settings
+min_games_pm    <- 20   # require stable months for rating deltas
+min_games_pom   <- 10   # require enough opening games to define a repertoire
+bin_width       <- 200  # rating bin width for faceting (optional)
+
+churn <- dbGetQuery(con, sprintf("
+  WITH pom AS (
+    -- collapse across time controls -> player-month-opening counts
+    SELECT
+      player,
+      month,
+      opening,
+      SUM(games) AS games_opening
+    FROM read_parquet(%s)
+    WHERE player IS NOT NULL
+      AND month  IS NOT NULL
+      AND opening IS NOT NULL
+      AND games IS NOT NULL
+    GROUP BY player, month, opening
+  ),
+  pom_tot AS (
+    SELECT
+      player,
+      month,
+      SUM(games_opening) AS games_total
+    FROM pom
+    GROUP BY player, month
+    HAVING SUM(games_opening) >= %d
+  ),
+  pom_share AS (
+    SELECT
+      p.player,
+      p.month,
+      p.opening,
+      p.games_opening,
+      t.games_total,
+      CAST(p.games_opening AS DOUBLE) / t.games_total AS share
+    FROM pom p
+    JOIN pom_tot t USING (player, month)
+  ),
+  indexed AS (
+    SELECT
+      player,
+      month,
+      STRPTIME(month || '-01', '%%Y-%%m-%%d') AS mdate,
+      opening,
+      share,
+      games_total
+    FROM pom_share
+  ),
+  paired AS (
+    -- join month t with month t-1 by player and opening
+    SELECT
+      cur.player,
+      cur.month AS month,
+      cur.mdate AS mdate,
+      cur.opening,
+      cur.share AS share_cur,
+      prev.share AS share_prev,
+      cur.games_total AS games_total
+    FROM indexed cur
+    LEFT JOIN indexed prev
+      ON cur.player = prev.player
+     AND cur.opening = prev.opening
+     AND prev.mdate = cur.mdate - INTERVAL '1 month'
+  ),
+  norms AS (
+    -- compute vector norms and dot products per player-month
+    SELECT
+      player,
+      month,
+      mdate,
+      MAX(games_total) AS games_total,
+      SUM(share_cur * COALESCE(share_prev, 0.0)) AS dot,
+      SQRT(SUM(share_cur * share_cur)) AS norm_cur,
+      SQRT(SUM(COALESCE(share_prev, 0.0) * COALESCE(share_prev, 0.0))) AS norm_prev,
+      -- share of games in openings not seen last month
+      SUM(CASE WHEN share_prev IS NULL THEN share_cur ELSE 0.0 END) AS new_opening_share
+    FROM paired
+    GROUP BY player, month, mdate
+  ),
+  churn AS (
+    SELECT
+      player,
+      month,
+      games_total,
+      CASE
+        WHEN norm_cur = 0 OR norm_prev = 0 THEN NULL
+        ELSE 1.0 - (dot / (norm_cur * norm_prev))
+      END AS churn_cosine,
+      new_opening_share
+    FROM norms
+    WHERE norm_prev > 0  -- require a prior month repertoire exists
+  ),
+  pm AS (
+    SELECT
+      player,
+      month,
+      avg_rating,
+      games,
+      LEAD(avg_rating) OVER (PARTITION BY player ORDER BY month) AS next_rating,
+      LEAD(games)      OVER (PARTITION BY player ORDER BY month) AS next_games
+    FROM read_parquet(%s)
+    WHERE player IS NOT NULL
+      AND month  IS NOT NULL
+      AND avg_rating IS NOT NULL
+      AND games IS NOT NULL
+      AND games >= %d
+  ),
+  pm_delta AS (
+    SELECT
+      player,
+      month,
+      avg_rating,
+      games,
+      (next_rating - avg_rating) AS d_rating_next
+    FROM pm
+    WHERE next_rating IS NOT NULL
+      AND next_games IS NOT NULL
+      AND next_games >= %d
+  )
+  SELECT
+    c.player,
+    c.month,
+    c.games_total AS opening_games,
+    d.games      AS pm_games,
+    d.avg_rating,
+    CAST(FLOOR(d.avg_rating/%d)*%d AS INTEGER) AS rating_bin,
+    c.churn_cosine,
+    c.new_opening_share,
+    d.d_rating_next
+  FROM churn c
+  JOIN pm_delta d USING (player, month)
+  WHERE c.churn_cosine IS NOT NULL
+", qpath(paths$pom_tc),
+   min_games_pom,
+   qpath(paths$pm),
+   min_games_pm, min_games_pm,
+   bin_width, bin_width
+))
+
+# bin churn for stable EDA curves
+churn <- churn %>%
+  mutate(
+    churn_bin = cut(
+      churn_cosine,
+      breaks = c(-Inf, 0.02, 0.05, 0.10, 0.20, 0.35, 0.50, Inf),
+      labels = c("≤2%", "2–5%", "5–10%", "10–20%", "20–35%", "35–50%", ">50%"),
+      right = TRUE
+    )
+  )
+
+churn_summ <- churn %>%
+  group_by(churn_bin) %>%
+  summarise(
+    n = n(),
+    mean_d = mean(d_rating_next, na.rm = TRUE),
+    med_d  = median(d_rating_next, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  filter(!is.na(churn_bin))
+
+ggplot(churn_summ, aes(x = churn_bin, y = mean_d)) +
+  geom_line(aes(group = 1)) +
+  geom_point(size = 2) +
+  labs(
+    x = "Repertoire churn (1 - cosine similarity of opening-share vectors)",
+    y = "Mean next-month Δ rating",
+    title = "Does changing your opening mix relate to next-month improvement?"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Optional: a more interpretable variant (share of games in brand-new openings)
+churn_new_summ <- churn %>%
+  mutate(
+    new_bin = cut(
+      new_opening_share,
+      breaks = c(-Inf, 0.00, 0.05, 0.10, 0.20, 0.35, 0.50, Inf),
+      labels = c("0%", "0–5%", "5–10%", "10–20%", "20–35%", "35–50%", ">50%"),
+      right = TRUE
+    )
+  ) %>%
+  group_by(new_bin) %>%
+  summarise(
+    n = n(),
+    mean_d = mean(d_rating_next, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  filter(!is.na(new_bin))
+
+ggplot(churn_new_summ, aes(x = new_bin, y = mean_d)) +
+  geom_line(aes(group = 1)) +
+  geom_point(size = 2) +
+  labs(
+    x = "Share of games in openings not used last month",
+    y = "Mean next-month Δ rating",
+    title = "Improvement vs experimenting with new openings (month-to-month)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r LowTimeRate Binned vs Improvement}
+# settings
+min_games_pm   <- 10
+min_moves_ptm  <- 40
+
+ltr_bins <- dbGetQuery(con, sprintf("
+  WITH pm_tc AS (
+    SELECT
+      player, month,
+      avg_rating, games
+    FROM read_parquet(%s)
+    WHERE player IS NOT NULL
+      AND month IS NOT NULL
+      AND avg_rating IS NOT NULL
+      AND games IS NOT NULL
+  ),
+  pm AS (
+    SELECT
+      player,
+      month,
+      SUM(games) AS games_total,
+      SUM(avg_rating * games) / SUM(games) AS avg_rating_all
+    FROM pm_tc
+    GROUP BY player, month
+    HAVING SUM(games) >= %d
+  ),
+  pm_next AS (
+    SELECT
+      player,
+      month,
+      games_total,
+      avg_rating_all,
+      LEAD(avg_rating_all) OVER (PARTITION BY player ORDER BY month) AS next_rating
+    FROM pm
+  ),
+  delta AS (
+    SELECT
+      player,
+      month,
+      games_total,
+      (next_rating - avg_rating_all) AS d_rating_next
+    FROM pm_next
+    WHERE next_rating IS NOT NULL
+  ),
+  ptm_tc AS (
+    SELECT
+      player, month,
+      low_time_rate, move_rows
+    FROM read_parquet(%s)
+    WHERE player IS NOT NULL
+      AND month IS NOT NULL
+      AND low_time_rate IS NOT NULL
+      AND move_rows IS NOT NULL
+  ),
+  ptm AS (
+    SELECT
+      player,
+      month,
+      SUM(move_rows) AS move_rows_total,
+      SUM(low_time_rate * move_rows) / SUM(move_rows) AS low_time_rate_all
+    FROM ptm_tc
+    GROUP BY player, month
+    HAVING SUM(move_rows) >= %d
+  )
+  SELECT
+    d.player,
+    d.month,
+    d.games_total,
+    d.d_rating_next,
+    p.move_rows_total,
+    p.low_time_rate_all
+  FROM delta d
+  JOIN ptm p USING (player, month)
+", qpath(paths$pm_tc), min_games_pm,
+   qpath(paths$ptm_tc), min_moves_ptm
+))
+
+# bin low-time rate (handles the big mass at 0 cleanly)
+ltr_bins <- ltr_bins %>%
+  mutate(
+    ltr_bin = cut(
+      low_time_rate_all,
+      breaks = c(-Inf, 0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.40, Inf),
+      labels = c("0%", "0–1%", "1–2%", "2–5%", "5–10%", "10–20%", "20–40%", ">40%"),
+      right = TRUE
+    )
+  )
+
+ltr_summ <- ltr_bins %>%
+  group_by(ltr_bin) %>%
+  summarise(
+    n = n(),
+    mean_d = mean(d_rating_next, na.rm = TRUE),
+    med_d  = median(d_rating_next, na.rm = TRUE),
+    mean_games = mean(games_total, na.rm = TRUE),
+    mean_moves = mean(move_rows_total, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  filter(!is.na(ltr_bin))
+
+ggplot(ltr_summ, aes(x = ltr_bin, y = mean_d)) +
+  geom_line(aes(group = 1)) +
+  geom_point(size = 2) +
+  labs(
+    x = "Low-time rate (collapsed across time controls; move-weighted)",
+    y = "Mean next-month Δ rating (games-weighted rating)",
+    title = "Time trouble vs improvement (binned summary, no loess)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Optional: show the sample size per bin (helps defensibility)
+ggplot(ltr_summ, aes(x = ltr_bin, y = n)) +
+  geom_col() +
+  labs(
+    x = "Low-time rate bin",
+    y = "Player-months",
+    title = "Support by low-time-rate bin"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+
+
+
+
+

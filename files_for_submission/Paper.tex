@@ -217,7 +217,7 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\date{January 30, 2026}
+\date{February 26, 2026}
 \title{\bf Project Title (Placeholder)}
 \author{
 Camden Bergquist\\
@@ -302,7 +302,7 @@ real-world environment where strategic choices and performance outcomes
 can be measured at scale and subsequently analyzed using statistical
 learning methods \citep{edelmann2020css, watts2014css}.
 
-\subsection{Background}\label{background}
+\subsection{Background}\label{sec-background}
 
 A growing research literature uses large online chess datasets to study
 human performance, decision-making, and strategic patterns. For example,
@@ -362,7 +362,7 @@ player performance and development over time.
 
 \newpage
 
-\section{The Data}\label{the-data}
+\section{The Data}\label{sec-data}
 
 \subsection{Source}\label{sec-source}
 
@@ -889,95 +889,815 @@ include:
 
 The information was then restructured and aggregated into a tidy format.
 
-\section{Exploratory Data Analysis}\label{exploratory-data-analysis}
+\section{Exploratory Data Analysis}\label{sec-eda}
 
-Show the initial graphs and basic analysis methods used to determine
-your methodology
+Figure~\ref{fig-coverage}, the first and most important of the EDA
+plots, shows the number of observations the parser sampled per
+player-month, colored by time control.\footnote{Throughout, `rows' refer
+  to aggregated observation units (e.g., player-month-time-control or
+  opening-month-time-control records), whereas `games' refer to the
+  underlying sampled matches contributing to those aggregates. A change
+  in row counts therefore reflects changes in the breadth of observed
+  groups, not necessarily a change in total game volume.} It highlights
+a fundamental flaw in my parsing method--- one that I failed to consider
+until seeing it visualized. See, while the parser filters the raw data
+down to a smaller subset of time controls and rating ranges, it does
+nothing to ensure that there's an equal distribution of games for given
+time controls or players of given ratings. Rather, it simply samples in
+a pseudo-random manner. This means that the distribution of certain
+variables in the cleaned dataset will reflect the true distribution of
+those variables among all games stored in the Lichess database. In more
+straightforward terms, popular time controls like blitz are played more
+often than less-popular ones like classical, and that relationship is
+mirrored in the data, as evidenced in Figure~\ref{fig-coverage}.
 
-\subsection{Interesting EDA 1 (Change
-name)}\label{interesting-eda-1-change-name}
+This finding isn't the end of the world, but it \emph{is} extremely
+important to control for. It means that some `missingness' will be
+structural rather than truly random, and that there will be a general
+imbalance across time controls, ratings, and months. It also justifies
+restricting certain analyses to blitz/rapid (or else collapsing them
+entirely), adding minimum-support thresholds to ensure there's enough
+data, and treating month as a potential confound only when coverage is
+stable enough; buckets with adequate support will be emphasized, and
+low-support buckets should be treated as exploratory only.
 
-Show some graph or numerical summary that imparts an interesting idea
-about the data set
+\begin{figure}
 
-\subsection{Interesting EDA 2 (Change
-name)}\label{interesting-eda-2-change-name}
+\centering{
 
-Show some graph or numerical summary that imparts an interesting idea
-about the data set
+\pandocbounded{\includegraphics[keepaspectratio]{Paper_files/figure-pdf/fig-coverage-1.pdf}}
+
+}
+
+\caption{\label{fig-coverage}Proportion of observations per time control
+is skewed due to the sampling method used when parsing. Any estimate
+that compares time controls will have unequal precision, especially
+where classical is concerned.}
+
+\end{figure}%
+
+Figure~\ref{fig-reliability} and Figure~\ref{fig-panel-depth} display
+two different kinds of unreliability inherent to player-month: the
+former being the number of games played in a given month, and the latter
+the number of months each player is present for in the data (total; not
+necessarily consecutive). For Figure~\ref{fig-reliability}, many
+player-months contain few games, making outcomes like win rate or
+average rating noisy at the unit level, justifying a minimum-games
+filter for player-month analyses, weighting player-month observations by
+games in aggregated models, and preferring aggregated measures such as
+bins over raw point clouds; game count should be treated as a
+precision/weighting signal.
+
+\begin{figure}
+
+\centering{
+
+\pandocbounded{\includegraphics[keepaspectratio]{Paper_files/figure-pdf/fig-reliability-1.pdf}}
+
+}
+
+\caption{\label{fig-reliability}Player-month observations have highly
+unequal reliability. The dataset has a long, right-skewed tail of
+heavy-activity players, which risk dominating aggregates if not
+uncontrolled for.}
+
+\end{figure}%
+
+For Figure~\ref{fig-panel-depth}, a majority of players only appear for
+a few months, which is to be expected for a hobby like chess. There's a
+notable spike at the 24-month column, but that makes sense--- that
+column reflects long-time players who have likely played for much longer
+than two-odd years; if this data were being visualized without a
+two-year window, that spike would reflect a `24+' bin rather than
+players who have played for exactly 24 months. This attrition justifies
+the reporting of effective sample size for any next- or k-month
+analysis, using consecutive-month joins rather than simple lags on
+sparse panels, and potentially restricting to `stable' players or months
+when clean identification is important.
+
+\begin{figure}
+
+\centering{
+
+\pandocbounded{\includegraphics[keepaspectratio]{Paper_files/figure-pdf/fig-panel-depth-1.pdf}}
+
+}
+
+\caption{\label{fig-panel-depth}The panel is unbalanced: Many players
+appear briefly; fewer are observed consistently. Lag-based outcomes are
+only defined for a subset of observations.}
+
+\end{figure}%
+
+Pictured in Figure~\ref{fig-delta-rating} is without contest the single
+most perfect Gaussian distribution I have ever seen in a real-world
+dataset. This is not a parsing mistake, nor the result of some sort of
+transformation, but a natural consequence of the Glicko-2 rating system
+employed by Lichess. Both Glicko-2 and its predecessor Glicko assume
+that player skill -- both for individuals \emph{and} for a given
+population -- follows a normal distribution. Because of that,
+implementations of Glicko systems almost always result in
+normally-distributed skill ratings, provided the player count is high
+enough.\footnote{It's important to note that Glicko-based systems don't
+  `force' ratings to conform to a normal distribution; it's possible for
+  them to fall into any form, but the way the system is designed tends
+  to converge towards normality in most cases.} Practically, this means
+that \(\Delta\) rating should be treated as a noisy outcome requiring
+careful aggregation, preferring binned summaries over unconstrained
+smoothing. It also encourages caution when interpreting
+statistically-significant-yet-tiny effects, as small, downright
+impractical or meaningless outcomes can still read as significant when
+dealing with a distribution like this.
+
+\begin{figure}
+
+\centering{
+
+\pandocbounded{\includegraphics[keepaspectratio]{Paper_files/figure-pdf/fig-delta-rating-1.pdf}}
+
+}
+
+\caption{\label{fig-delta-rating}Rating change is centered near zero
+with roughly symmetric dispersion. Most month-to-month changes are
+small, so effect sizes will likely be modest.}
+
+\end{figure}%
+
+Unsurprisingly, Figure~\ref{fig-volatility} shows that the variance in
+players' month-to-moth ratings decreases with the number of games played
+in a given month. Importantly, the figure is log-transformed; though the
+plot visualizes a linear relationship, the first hundred games or so are
+comparatively more impactful than the next thousand. This is a
+relationship that I would expect to see with any rating system -- law of
+large numbers and all -- but was something I was expecting from Glicko-2
+in particular. On top of rating, Glicko systems also measure
+uncertainty, which is a Bayesian-style measure of how confident it is in
+a player's rating. Because uncertainty always reduces as more games are
+played, it makes sense that this relationship is so clearly present in
+the data. This figure helps reinforce the need for minimum-games filters
+(which will reduce heteroskedastic noise) and shows that weighting by
+games is defensible as precision weighting. It also supports
+longer-horizon \(\Delta\) (over multiple months instead of just one) as
+a way to increase robustness because it averages noise.
+
+\begin{figure}
+
+\centering{
+
+\pandocbounded{\includegraphics[keepaspectratio]{Paper_files/figure-pdf/fig-volatility-1.pdf}}
+
+}
+
+\caption{\label{fig-volatility}Observed rating movement behaves like a
+measurement-error problem; the number of games played is inversely
+proportional to rating-change volatility. This is expected behavior for
+a rating system.}
+
+\end{figure}%
+
+Figure~\ref{fig-low-time} shows that low-time rate is massively
+zero-inflated, to the degree that it's difficult to identify a
+meaningful relationship when modeled continuously; binning is
+practically a necessity. Not shown directly in the figure is the fact
+that rapid and classical time controls don't have enough data to be
+meaningfully modeled on their own; due to how low-time rate is defined
+in the parser, a much smaller proportion of moves classify as being
+performed under time pressure.\footnote{Low-time definition: A move is
+  flagged as `low time' if the remaining clock time after the move
+  satisfies
+  \(\text{clock\_after} \le \max\!\left(10,\; 2 \times \text{increment}\right)\)
+  seconds, where \(\text{increment}\) is the per-move increment of the
+  game's time control.} This justifies collapsing across time controls
+via move-weighted aggregations, near-exclusive use of binned metrics
+(including a 0\% bin) instead of smoothers, and a combination of minimum
+move-row thresholds and n-per-bin reports for defensibility.
+
+\begin{figure}
+
+\centering{
+
+\pandocbounded{\includegraphics[keepaspectratio]{Paper_files/figure-pdf/fig-low-time-1.pdf}}
+
+}
+
+\caption{\label{fig-low-time}Low-time rate is zero-inflated and noisy.
+Time-control-specific curves are underpowered (with the exception of
+blitz), and pooling is needed for stable inference. Any relationshop
+between time trouble and improvement is likely both small and nonlinear,
+which is why loess smoothing wasn't applied to this figure.}
+
+\end{figure}%
+
+Collectively, these diagnostics show that the dataset is (1) imbalanced
+across time controls (and ratings, though not visualized), (2) highly
+variable in within-unit support, and (3) noisy in short-horizon
+outcomes. Therefore, methods should adopt minimum-support thresholds,
+use precision weights, and rely on binned or aggregated summaries for
+stable inference.
+
+\subsection{Opening Share}\label{opening-share}
+
+Opening trends over time are one of the main ways this project aims to
+study metagame development. The results, featured in
+Figure~\ref{fig-opening} and Figure~\ref{fig-opening-rating}, are rather
+disappointing. In particular, Figure~\ref{fig-opening} displays an
+amount of stability that I never would have expected from a dataset
+spanning as many months as this. It should be noted that similar figures
+for rapid and classical time controls show similar patterns, but with
+more variance. I suspect this difference in variance is a result of the
+fewer number of rows associated with each format, as classical stands
+out the most. Even if variance differs, however, the pattern remains
+regardless of time control--- there's very little drift in terms of
+opening popularity, at least so far as the most popular choices are
+concerned. A better way of exploring this dynamic would have used select
+months over several years, but doing so would have required a completely
+different parsing pipeline, so this will have to suffice.
+
+\begin{figure}
+
+\centering{
+
+\pandocbounded{\includegraphics[keepaspectratio]{Paper_files/figure-pdf/fig-opening-1.pdf}}
+
+}
+
+\caption{\label{fig-opening}Opening preference remains remarkably stable
+in blitz games over the project's two-year period.}
+
+\end{figure}%
+
+Figure~\ref{fig-opening-rating}, while still more stable than expected,
+is more interesting. This figure shows clear changes in preferences as
+player rating increases, particularly in the cases of the Pirc and
+Philidor defenses--- the former becoming more popular and the latter
+less. Even where the more stable openings are concerned, there's a more
+pronounced trend present than anything in Figure~\ref{fig-opening}. Even
+if the relationship is minor, this is evidence enough to warrant
+attempts at modeling opening popularity as a function of player skill.
+
+\begin{figure}
+
+\centering{
+
+\pandocbounded{\includegraphics[keepaspectratio]{Paper_files/figure-pdf/fig-opening-rating-1.pdf}}
+
+}
+
+\caption{\label{fig-opening-rating}Opening trends by rating are more
+interesting. The Pirc and Philidor defenses show particularly
+interesting movement as player rating increases.}
+
+\end{figure}%
+
+\subsection{Time Usage}\label{time-usage}
+
+Figure~\ref{fig-time} and Figure~\ref{fig-time-allocation} are much more
+in line with what I was expecting than the opening-popularity figures.
+Figure~\ref{fig-time} shows a clear difference in thinking time, both
+between time controls and player ratings. Blitz and classical time
+controls are mirrors of one another: As players get better, they spend
+less time per move in blitz formats and more per move in classical
+formats. Rapid, in contrast, shows an interesting curve, where time
+usage dips for a little and then increases. Overall,
+Figure~\ref{fig-time} is enough on its own to justify time control as a
+factor when modeling with move time as an outcome.
+
+\begin{figure}
+
+\centering{
+
+\pandocbounded{\includegraphics[keepaspectratio]{Paper_files/figure-pdf/fig-time-1.pdf}}
+
+}
+
+\caption{\label{fig-time}All three time controls have distinct
+time-usage patterns as player rating increases.}
+
+\end{figure}%
+
+Figure~\ref{fig-time-allocation} is in my opinion one of the most
+interesting. It breaks down the time-per-move from Figure~\ref{fig-time}
+into the amount of time allocated in opening, middlegame, and endgame
+phases.\footnote{Game phases are defined by the Stockfish chess engine
+  rather than a consistent standard.} Regardless of skill or time
+control, the consistent throughline is that players spend the most time
+thinking in the middlegame and the least in the opening, with the
+endgame in the middle. This is about what I'd expect. The opening has
+the fewest possible permutations, and is often studied and memorized,
+and while the end- and middlegames are similar, the former tends to be
+defined when fewer pieces remain on the board, which reduces complexity
+and thus thinking time. It sugggests factoring by gamestate may also be
+helpful when modeling move time as an outcome.
+
+\begin{figure}
+
+\centering{
+
+\pandocbounded{\includegraphics[keepaspectratio]{Paper_files/figure-pdf/fig-time-allocation-1.pdf}}
+
+}
+
+\caption{\label{fig-time-allocation}All three time controls have
+distinct time-usage patterns when game phases are additionally factored
+in.}
+
+\end{figure}%
+
+\subsection{Opening Diversity}\label{opening-diversity}
+
+Figure~\ref{fig-strata} is the strangest of the figures I've chosen to
+share here. It's also the most complex, faceting by rating bin and
+coloring the plot's lines by number of games played. For the most part,
+players' month-to-month rating seems to remain mostly stable regardless
+of opening diversity. A few patterns remain consistent, however: (1) At
+lower ratings, opening diversity has a minor-yet-positive relationship
+with rating change, indicating slight improvement on average for players
+with a larger repertoire. This relationship seems to falls off once a
+player hits a rating of around 1800. And (2) the left tail of each plot
+tends to skew negative, regardless of where the plot is centered. I'm
+not entirely sure how useful any of this information will be for
+modeling, but I felt it was an interesting enough visualization to
+share.
+
+\begin{figure}
+
+\centering{
+
+\pandocbounded{\includegraphics[keepaspectratio]{Paper_files/figure-pdf/fig-strata-1.pdf}}
+
+}
+
+\caption{\label{fig-strata}Line color indicates number of games played,
+while the x-axis show the number of unique openings a player used within
+a given month.}
+
+\end{figure}%
 
 \newpage
 
 \section{Methodology}\label{methodology}
 
-Describe the methods used to analyze the data. Do not discuss the
-analysis itself. Make sure to discuss any train/test data splitting
-here.
+At the core of this project are three themes, as listed in the
+Section~\ref{sec-background}: (1) descriptive metagame dynamics, (2) how
+time constraints relate to behavior and performance, and (3)
+characterization of player types or styles. The analysis is strictly
+non-causal; models are used for description, association, and prediction
+under out-of-sample evaluation.
 
-\subsection{Data Tranformations (if
-applicable)}\label{data-tranformations-if-applicable}
+When splitting the data into train and test sets, all predictive
+modeling uses forward-in-time splits to avoid data leakage. This means
+that the training set contains earlier months in the sample window,
+while the validation/test set are a contiguous block of later months
+that were held out from the training data. This split is applied at the
+month level so that predictors from any given month are never trained
+using information from future months. For player progression tasks,
+where the target is a future rating change, using time-forward splits is
+essential for keeping evaluation realistic.
 
-Describe any transformation you did to the data to assist in the
-analyzing of the data such as creating dummy variables.
+When appropriate, models are additionally checked for robustness under
+time-control and rating-bin stratification, to ensure performance isn't
+driven by a single skill or time-control band.
+
+\subsection{Data Tranformations}\label{data-tranformations}
+
+Transformations serve to stabilize noisy estimates, make quantities
+comparable across players and contexts, and construct interpretable
+features aligned with all three research topics. Different
+transformations are applied for different purposes.
+
+\subsubsection{Aggregation-Level Alignment}\label{sec-aggregation}
+
+Rather than a single, monolithic dataset, this project handles several
+datasets aligned to differing observational units. Strictly speaking,
+this alignment occurs during the data pipeline itself rather than a
+formal, pre-modeling cleaning step but it's important to note
+nonetheless. Broadly, the observational units for each table can be
+separated into four categories: metagame (population-level games),
+player outcomes (player-level games), time usage, and opening
+repertoire. This, however, is an oversimplification; please refer to
+Section~\ref{sec-data} for more detail.
+
+\subsubsection{Binning and
+Standardization}\label{binning-and-standardization}
+
+To support nonparametric EDA and stable estimation, rating is often
+binned for plots and stratified summaries--- several of which have
+already been featured in Section~\ref{sec-eda}. For clustering (player
+type/style discovery), features are standardized using z-scores so that
+variables measured on different scales (e.g., seconds, proportions,
+counts) contribute in a comparable manner.
+
+\subsubsection{Exposure Weighting and Time-Control-Collapsed
+Quantities}\label{exposure-weighting-and-time-control-collapsed-quantities}
+
+As displayed by Figure~\ref{fig-coverage} in Section~\ref{sec-eda}, in
+some contexts it's justifiable to collapse observations across time
+controls, particularly where classical is concerned. When a model needs
+`overall' player-month measures rather than those specific to a given
+time control, overall rating is constructed as a games-weighted average
+of \texttt{avg\_rating} across time controls. Similarly, overall
+time-trouble rate becomes an average of \texttt{low\_time\_rate} across
+time controls, weighted by move rows. This prevents the volume disparity
+between time controls from disproportionately influencing aggregated
+quantities.
+
+\subsubsection{Reliability Thresholds}\label{reliability-thresholds}
+
+Many variables are rates estimated from finite samples. Often, these
+sample sizes are extremely small, increasing volatility. In order to
+reduce such noise, minimum thresholds for observation count may be
+applied; player-month observations may require a minimum number of games
+per player, time-use observations a number of move-rows, and
+opening-level estimates a number of games per group. This filtering may
+still be applied even if the model or models being fit don't explicitly
+require it to function (or as part of a fundamental model assumption) to
+ensure that modeled signals are not dominated by small-sample
+volatility.
+
+\subsubsection{Derived Features}\label{derived-features}
+
+A set of interpetable style features is constructed from player-opening
+and time-use tables for use in type discovery and player-progression
+models. Similarly to Section~\ref{sec-aggregation}, some of these
+features were created during the data pipeline itself, while others are
+derived directly from them. These include:
+
+\begin{itemize}
+\tightlist
+\item
+  Repertoire breath, measured by \texttt{opening\_diversity}.
+\item
+  Repertoire concentration, computed as a share of games in the
+  most-played opening from \texttt{player\_opening\_month}.
+\item
+  Opening switching, indicated by whether \texttt{top\_opening} differs
+  from the previous month.
+\item
+  Repertoire churn, measured jointly as:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    The distance between consecutive-month opening-share vectors.
+  \item
+    The share of games in brand new openings relative to the month
+    prior.
+  \end{itemize}
+\item
+  Time-pressure behavior, based on a combination of
+  \texttt{low\_time\_rate} plus summaries like
+  \texttt{avg\_time\_spent}, \texttt{p90\_time\_spent}, and
+  \texttt{avg\_time\_opening}.
+\end{itemize}
+
+For more information on pre-existing features, see
+Section~\ref{sec-data}.
+
+\subsubsection{Missingness}\label{missingness}
+
+Finally, phase-specific time metrics are often missing for structural
+reasons. Almost always, the phase missing is endgame, as many games
+never reach a computer-defined endgame due to resignation or blundered,
+early losses. Models that use phase variables either include explicit
+missingness handling or analyze phases separately with appropriate
+inclusion rules.
 
 \subsection{Types of Models}\label{types-of-models}
 
-Describe how many different models you used and why.
+Because this project aims to explore a variety of questions by modeling
+on multiple datasets, strictly categorizing models by family makes
+little sense.\footnote{Here, I define ``model family'' as sets of models
+  operating under similar principles and fundamental assumptions (e.g.,
+  general linear models, tree-based models, etc.), whereas ``model
+  category'' refers to the five groupings of models I specifically
+  define for this paper.} Were there a single theme and associated
+dataset, doing so would make it easy to illustrate exactly how each type
+of model contributes to the project's singular goal. In this case,
+however, I think it more appropriate to categorize models by their goal;
+to define them by the questions they intend to answer and the methods
+they'll use in seeking them.\footnote{It should be noted that this form
+  of model categorization allows for slight overlap between model
+  families; some families may be used by multiple categories of model.}
 
-\subsubsection{Model 1 (Change to appropriate
-name)}\label{model-1-change-to-appropriate-name}
+\subsubsection{Metagame Dynamics}\label{sec-metagame-dynamics}
 
-Describe why you used model type one. You do not need to include a new
-section for every iteration of the same model type. For example you do
-not need 4 sections if you have 4 linear models with 1, 2, 3, and 4
-independent variables.
+The goal of metagame models are to quantify how aggregate metagame
+metrics vary across factors such as time and format. The primary
+observational unit is \texttt{meta\_opening\_month\_tc}, while response
+variables include \texttt{share} and outcome rates (e.g.,
+\texttt{white\_win\_rate}). The model families which fall under this
+category include generalized additive models (GAM) and weighted linear
+models (WLM), as well as multinomial models.
 
-\subsubsection{Model 2 (Change to appropriate
-name)}\label{model-2-change-to-appropriate-name}
+GAM and WLM models are useful because they produce simple, easy-to-read
+trend estimates. The incorporation of weights let high-support
+opening-month cells impact the fit more than small, noisy cells, and
+GAM-style smoothing allows for nonlinear time trends without forcing a
+specific form. Both are strong at tracking a small set of common
+openings over time (which, given the EDA, is very relevant \#ref) while
+remaining easy to justify and visualize. Importantly, because opening
+shares are bounded and compositional, these models can only ever
+approximate the true structure of opening share, meaning that results
+will necessarily be biased or even potentially spurious.
 
-Describe why you used model type two.
+Multinomial models exist to solve the problem of compositional
+variables. By modeling on log-odds and log-ratios, they avoid predicting
+impossible shares (\(\notin 0 < x < 1\)); in essence, they're capable of
+implicitly understanding that if one opening goes up, others must go
+down. This provides interpretable effects for opening adoption relative
+to a specific baseline, meaning they're best when relative substitution
+between openings is of import. Multinomial models tend to work better
+when modeling a large portion of a distribution (rather than just the
+top k), but as a consequence are more complicated to both implement and
+interpret.
 
-\subsubsection{Model 3 (Change to appropriate
-name)}\label{model-3-change-to-appropriate-name}
+Combined, these models attempt to ask questions about the state of the
+metagame -- the Lichess `ecosystem' -- and its evolution rather than
+just fitting adoption curves.
 
-Describe why you used model type three.
+\subsubsection{Opening Popularity}\label{opening-popularity}
 
-\subsubsection{Model 4 (Change to appropriate
-name)}\label{model-4-change-to-appropriate-name}
+The goal of opening-popularity models is to describe how opening
+preferences differ by player skill and time control. You'll notice that
+this goal shares substantial overlap with that of metagame models, and
+indeed, opening popularity is a subset of metagame dynamics. The core
+difference between the two is that opening-popularity models exclusively
+target the adoption rate of openings at the expense of all other
+metagame descriptors; they care not for the diversity of the opening
+pool, or how outcome rates, game length, and rating gaps shift, for
+instance. While both use \texttt{meta\_opening\_month\_tc} as an
+observational unit, popularity models prefer to treat each opening
+separately (top-k) or as a compositional set focused on \texttt{share}.
+Models in this category include multinomial models, count models, and
+weighted regression.
 
-Describe why you used model type four.
+Contrary to the metagame category, multinomial models are front and
+center for opening popularity because the target is explicitly
+compositional. Metagame models seek to observe large-scale patterns more
+than anything, so in their case it's possible to get away with using
+multinomials as a backup for increased accuracy, but when it comes to
+opening popularity there's no real excuse. Multinomial choice models
+build player-game as a categorical choice, producing probabilities of
+choosing each opening as a function of things like rating and time
+control. They're computationally heavy, but are worth the price if they
+have access to enough data.
 
-\subsubsection{Model 5 (Change to appropriate
-name)}\label{model-5-change-to-appropriate-name}
+Count models such as poisson and negative binomial are a simpler answer
+to the same problem, treating observed opening use as counts out of a
+total number of games. By applying an offset (e.g., taking the log of
+total games), they can effectively model rates while remaining in count
+space. Negative binomial can handle overdispersion, which is common in
+count data. Their main advantage over multinomial models is their
+ability to produce interpretable, multiplicative effects, or rate
+ratios, which allows for another angle of analysis.
 
-Describe why you used model type five.
+Finally, weighted regression on \texttt{share} takes the `simple is
+best' philosophy to an extreme. Just as in the prior section, they don't
+enforce composition, meaning they're liable to misbehave at the
+boundaries if used for extrapolation; they can't replace multinomial or
+count models and only serve as an approximation. They remain for much
+the same reasons as before: they're easy to implement, easy to explain,
+and good when the only goal is a half-decent descriptive model focused
+on top openings. Weighted regression certainly won't be the star of the
+show, but it's such a simple addition that it costs nothing to include.
 
-\subsubsection{Further Models}\label{further-models}
+Together, these models seek to hone in on opening popularity with a
+higher degree of specificity than the metagame models, each through
+varying levels of complexity.
 
-If using more than 5 types of models, use this section to quickly
-discuss them here. These should only be models that you do not expect to
-be great.
+\subsubsection{Time-Use}\label{time-use}
 
-\subsection{Method of model selection}\label{method-of-model-selection}
+Time use models attempt to characterize the way time allocation varies
+across skill and time control. Observational units are
+\texttt{player\_time\_month\_tc} for player-level behavior and
+\texttt{moves\_month\_tc} for macro behavior. Response variables include
+time spent, time management, pressure, and phase allocation, while
+predictors primarily consist of \texttt{avg\_rating} and
+\texttt{tc\_bucket}. Three related pairs of models populate this
+category: additive- and interaction regression, robust- and quantile
+regression, and beta- and logistic-style modeling.
 
-Describe how you determine which model you choose at the end. Should
-also describe why you chose this method.
+Additive regression and interaction regression provide a clean
+separation between skill effects and constraint effects. Additive
+regression assumes each predictor contributes its own effect, and that
+those effects simply add up, best for when predictors are believed to
+act independently of one another. They also tend to be a substitute for
+interaction regression when there's not enough data. Interaction
+regression, as the name implies, allows the effect of one predictor to
+depend on the level of another predictor. Both are relatively easy to
+interpret.
+
+Robust regression and quantile regression are useful in situations when
+ordinary least squares (OLS) is a poor fit. Notably, both solve
+different problems. Robust regression still estimates the conditional
+mean like OLS, but makes it less sensitive to outliers, whereas quantile
+regression breaks the mold by estimating a conditional quantile (e.g.,
+median, 90th percentile, etc.) rather than the mean. As a consequence,
+they must also be interpreted slightly differently, as they ask how
+predictors shift a percentile rather than the mean. They're valuable for
+modeling time use because time-related variables often present heavy
+tails, which these models are better equipped to handle.
+
+Beta and logistic modeling are along for the ride because of a specific
+problem. Namely, \texttt{low\_time\_rate} is bounded and almost always
+piles up at 0. Both beta and logit-style approaches keep predictions
+bounded in {[}0, 1{]}, handling proportion structure better than OLS,
+the core difference between the two being that logistic modeling uses a
+binary response (or a count of successes out of a total number of
+trials), while beta modeling uses a continuous proportion between 0 and
+1. By binning low-time rate, it's possible to produce stable summaries
+that avoid smoothing failures, making for a more-easily-defensible model
+
+Together, these models thoroughly explore several different methods of
+time-use analysis. The reason this section contains three pairs of
+complimentary models rather than just the `better' of each pair is that
+the EDA did not produce conclusive enough evidence to justify jumping
+straight to a smaller subset of model options; the data is complex
+enough that a simple visual inspection was insufficient for ruling out
+one choice or the other, and so the most reliable solution is to test
+them all.
+
+\subsubsection{Player-Progression
+Models}\label{player-progression-models}
+
+Player-progression models are straightforward: They wish to relate a
+player's current-month behavior to future rating change. The purpose of
+this category is simple, asking if it's possible to isolate certain
+factors that prove to have a marked effect on a player's growth---
+positive \emph{or} negative. The baseline observational unit for these
+models is \texttt{player\_month}, which can be stratified by time
+control (\texttt{player\_month\_tc}) or joined to other tables for
+additional information (e.g., \texttt{player\_time\_month\_tc} or
+\texttt{player\_opening\_month\_tc}). The response variables are derived
+from \texttt{avg\_rating} and all represent \(\Delta rating\) in some
+form. Horizon spans may differ (i.e., rating change over spans greater
+than a single month), and constructing a stability model using
+\(|\Delta|\) is also possible. Predictors include the number of games
+and moves played during a given timespan, style proxies, and time-use
+features, controlled by baseline rating and other fixed effects.
+Comprising this category are model families such as regularized linear
+models, mixed-/fixed effects models, and tree-based regression.
+
+Regularized linear models (ridge, lasso, elastic net) help account for
+the fact that this category's predictors are correlated. Regularization
+stabilizes these estimates. Ridge regression is good for prediction
+under multicollinearity, and lasso, though perhaps less relevant here is
+good for feature selection. Elastic net is a hybrid of the two. As a
+whole, they should provide a strong baseline predictive model without
+sacrificing interpretability.
+
+Fixed effects models and mixed (random) effects models are good at
+handling longitudinal data, though they differ in how they handle
+time-invariant predictors. The former controls for time-invariant
+differences without attempting to predict their effects, while the
+latter tries to estimate said effects. Fixed effects push towards
+within-player identification, while mixed effects will pool players to
+improve stability. Crucially, mixed effects models assume that unit
+intercepts are uncorrelated to the regressors, which can't be reasonably
+assumed with this data. Fixed effects models are likely to be the better
+performing of the two (if non-fixed models even pass muster at all),
+though the implementation of something like a correlated random effects
+(Mundlak) model might help bridge the gap.
+
+Tree-based regression both naturally captures nonlinearities and
+thresholds in the data and automatically handles interactions without
+explicit specification. They're best for exploratory prediction and
+detecting complex feature relationships. As with all tree-based models,
+this comes at the cost of interpretability; they require interpretation
+tools such as feature importance, partial dependence plots, individual
+conditional expectation plots, et cetera, and even then struggle to
+match the interpretability of more-straightforward models.
+
+Together, these models account for the varying facets of longitudinal
+player-level modeling in order to identify the best angle to attack the
+problem from.
+
+\subsubsection{Player Categorization}\label{player-categorization}
+
+As the name implies, player-categorization models want to categorize
+players. More specifically, they seek to identify clusters using
+behavioral features, stratifying by rating and format, and observing for
+stability. This is by far the most nebulous of the model categories
+because they're primarily exploratory in nature; rather than beginning
+with pre-defined player archetypes and asking how their performance
+differs, these models ask which style clusters (if any) can be
+identified in the first place. The most straightforward observational
+unit is a join between \texttt{player\_month\_tc},
+\texttt{player\_time\_month\_tc}, and repertoire-derived features, and
+inputs include performance, outcomes, repertoire breadth, time use, and
+general context. The core model families in this category are
+dimensionality reduction and clustering, though additional modeling
+becomes possible after playstyle has been categorized.
+
+Dimensionality reduction methods such as principal component analysis
+(PCA) and uniform manifold approximation and projection (UMAP) provide
+low-dimensional representation. PCA yields interpretable axes and helps
+with noise reduction, whereas UMAP is useful for visual separations and
+nonlinear manifolds. PCA is a linear method which tries to preserve
+large-scale structure, while UMAP is a nonlinear method prefers
+preserving cluster separation. Dimensionality reduction is good at for
+summarizing multi-feature space \emph{before} clustering or
+visualization, which should prove helpful in the case of a very broad
+`style space'.
+
+Clustering methods (e.g., k-means, hierarchical, GMM) are potentially
+capable of turning continuous player-behavior into discrete, describable
+archetypes. K-means clustering is fast, but requires tuning towards an
+unknown k. Hierarchical clustering is tree-based and doesn't require a
+known k, but requires a dendrogram for interpretation, and Gaussian
+mixture models (GMM) creates clusters of varying sizes with associated
+membership probabilities, which is useful if player archetypes overlap.
+
+Though perhaps not within the scope of this project, dimensionality
+reduction and clustering are notable as a potential method of creating
+discrete types for downstream modeling. Once each player-month has a
+type, it becomes possible to study stability and movement between types
+or perform supervised follow-up using type labels (e.g., as predictors
+of progression).
+
+Together, these models explore the bounds of player-archetype/playstyle
+categorization.
+
+\subsection{Model Selection}\label{model-selection}
+
+Because this project does not intend to settle on a single, final,
+`best' model, I have not outlined an exact process for model selection.
+Rather, the sheer quantity and breadth of models tested naturally pushes
+toward a broader set of more-general rules to follow. The rules I have
+defined are as follows:
+
+\begin{itemize}
+\tightlist
+\item
+  Start with defensible baselines.
+
+  \begin{itemize}
+  \tightlist
+  \item
+    Make the simplest possible model (or set of models) in a given
+    category that fulfill reasonable standards for transparency,
+    methodology, and fulfilled model assumptions.
+  \item
+    Compare increasingly-complex models to their baseline counterparts
+    when assessing their worth.
+  \end{itemize}
+\item
+  Prefer simpler models when performance is comparable.
+
+  \begin{itemize}
+  \tightlist
+  \item
+    When two models perform similarly, the one with fewer assumptions
+    and clearer interpretation is preferable for reporting.
+  \end{itemize}
+\item
+  Check stability to thresholds and stratification.
+
+  \begin{itemize}
+  \tightlist
+  \item
+    Key results must be checked for sensitivity to minimum thresholds
+    and to whether analyses are stratified by time control and/or rating
+    bin.
+  \item
+    If one model performs worse than another but the better-performing
+    model fails to pass for stability, then the `worse', more-stable
+    model should be preferred.
+  \end{itemize}
+\item
+  For clustering specifically, select solutions by stability and
+  interpretability.
+
+  \begin{itemize}
+  \tightlist
+  \item
+    Candidate clusterings should be preferred when feature profiles are
+    distinct and assignments are reasonably stable across adjacent
+    months or within rating strata.
+  \end{itemize}
+\end{itemize}
+
+Because no single framework is sufficient for selecting between all
+models tested, a large portion of the model-selection process will
+instead be covered in Section~\ref{sec-results}.\footnote{As a note, I
+  heavily suspect I'll be reworking this section before the final draft
+  of this paper.}
 
 \newpage
 
-\section{Results}\label{results}
+\section{Results}\label{sec-results}
 
 Describe the results that you received from the methods described
 earlier.
 
 \subsection{Model 1 (Change to appropriate
-name)}\label{model-1-change-to-appropriate-name-1}
+name)}\label{model-1-change-to-appropriate-name}
 
 Show the results for model type one. At least one fully written out
 model should be displayed for each model type.
 
 \subsection{Model 2 (Change to appropriate
-name)}\label{model-2-change-to-appropriate-name-1}
+name)}\label{model-2-change-to-appropriate-name}
 
 Show the results for model type two.
 
@@ -1046,24 +1766,514 @@ If showing multiple tables make sure to index them by 0.1 each
 
 \begin{Shaded}
 \begin{Highlighting}[]
-\FunctionTok{library}\NormalTok{(tidyverse)}
-\CommentTok{\# Reason for library ...}
-\CommentTok{\#library(...)}
-\CommentTok{\# Reason for library ...}
-\CommentTok{\#library(...)}
+\CommentTok{\# Need I explain these?}
+\FunctionTok{library}\NormalTok{(tidyverse) }
+\FunctionTok{library}\NormalTok{(scales)}
 
-\CommentTok{\# Set seed is used because question ... uses a random generator}
-\FunctionTok{set.seed}\NormalTok{(}\DecValTok{123}\NormalTok{)}
-\CommentTok{\# Load cleaned data here. If cleaning was required make sure to have a separate r file for the cleaning.}
+\FunctionTok{library}\NormalTok{(arrow) }\CommentTok{\# For reading parquet files}
+\FunctionTok{library}\NormalTok{(DBI) }\CommentTok{\# To open DuckDB connection}
+\FunctionTok{library}\NormalTok{(duckdb) }\CommentTok{\# To manipulate data on disk instead of in environment, saving on RAM}
+\FunctionTok{library}\NormalTok{(ggthemes) }\CommentTok{\# Provides ready{-}made ggplot themes}
+
+\CommentTok{\# Data Paths}
+\NormalTok{base\_dir }\OtherTok{\textless{}{-}} \StringTok{"../data/derived/full\_datasets"}
+\NormalTok{paths }\OtherTok{\textless{}{-}} \FunctionTok{list}\NormalTok{(}
+  \AttributeTok{pm =} \FunctionTok{file.path}\NormalTok{(base\_dir, }\StringTok{"player\_month.parquet"}\NormalTok{),}
+  \AttributeTok{pm\_tc =} \FunctionTok{file.path}\NormalTok{(base\_dir, }\StringTok{"player\_month\_tc.parquet"}\NormalTok{),}
+  \AttributeTok{pom\_tc =} \FunctionTok{file.path}\NormalTok{(base\_dir, }\StringTok{"player\_opening\_month\_tc.parquet"}\NormalTok{),}
+  \AttributeTok{ptm\_tc =} \FunctionTok{file.path}\NormalTok{(base\_dir, }\StringTok{"player\_time\_month\_tc.parquet"}\NormalTok{),}
+  \AttributeTok{mom\_tc =} \FunctionTok{file.path}\NormalTok{(base\_dir, }\StringTok{"meta\_opening\_month\_tc.parquet"}\NormalTok{)}
+\NormalTok{)}
+
+\CommentTok{\# Open database connection}
+\NormalTok{con }\OtherTok{\textless{}{-}} \FunctionTok{dbConnect}\NormalTok{(}\FunctionTok{duckdb}\NormalTok{(), }\AttributeTok{dbdir=}\StringTok{":memory:"}\NormalTok{)}
+
+\CommentTok{\# Helper for safe \textasciigrave{}read\_parquet()\textasciigrave{} path quoting}
+\NormalTok{qpath }\OtherTok{\textless{}{-}} \ControlFlowTok{function}\NormalTok{(p) }\FunctionTok{paste0}\NormalTok{(}\StringTok{"\textquotesingle{}"}\NormalTok{, }\FunctionTok{gsub}\NormalTok{(}\StringTok{"\textquotesingle{}"}\NormalTok{, }\StringTok{"\textquotesingle{}\textquotesingle{}"}\NormalTok{, }\FunctionTok{normalizePath}\NormalTok{(p, }\AttributeTok{winslash=}\StringTok{"/"}\NormalTok{, }\AttributeTok{mustWork=}\ConstantTok{FALSE}\NormalTok{)), }\StringTok{"\textquotesingle{}"}\NormalTok{)}
+
+\NormalTok{cov\_pm\_tc }\OtherTok{\textless{}{-}} \FunctionTok{dbGetQuery}\NormalTok{(con, }\FunctionTok{sprintf}\NormalTok{(}\StringTok{"}
+\StringTok{  SELECT month, tc\_bucket, COUNT(*) AS n\_rows}
+\StringTok{  FROM read\_parquet(\%s)}
+\StringTok{  GROUP BY month, tc\_bucket}
+\StringTok{  ORDER BY month, tc\_bucket}
+\StringTok{"}\NormalTok{, }\FunctionTok{qpath}\NormalTok{(paths}\SpecialCharTok{$}\NormalTok{pm\_tc)))}
+
+\FunctionTok{ggplot}\NormalTok{(cov\_pm\_tc, }\FunctionTok{aes}\NormalTok{(}\AttributeTok{x =}\NormalTok{ month, }\AttributeTok{y =}\NormalTok{ n\_rows, }\AttributeTok{group =}\NormalTok{ tc\_bucket, }\AttributeTok{color =}\NormalTok{ tc\_bucket)) }\SpecialCharTok{+}
+  \FunctionTok{geom\_line}\NormalTok{(}\AttributeTok{linewidth =} \DecValTok{1}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{coord\_cartesian}\NormalTok{(}\AttributeTok{clip =} \StringTok{"off"}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{labs}\NormalTok{(}\AttributeTok{x =} \StringTok{"Month"}\NormalTok{, }\AttributeTok{y =} \StringTok{"Observations (Player{-}Month{-}TC)"}\NormalTok{, }\AttributeTok{title =} \StringTok{"Coverage of Player{-}Month{-}TC Table"}\NormalTok{, }\AttributeTok{color =} \StringTok{"Time Control"}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{scale\_color\_few}\NormalTok{(}\AttributeTok{labels =} \FunctionTok{c}\NormalTok{(}\StringTok{"Blitz"}\NormalTok{, }\StringTok{"Classical"}\NormalTok{, }\StringTok{"Rapid"}\NormalTok{)) }\SpecialCharTok{+}
+  \FunctionTok{theme\_few}\NormalTok{() }\SpecialCharTok{+} 
+    \FunctionTok{theme}\NormalTok{(}
+    \AttributeTok{panel.grid.major.x =} \FunctionTok{element\_blank}\NormalTok{(),}
+    \AttributeTok{panel.grid.major.y =} \FunctionTok{element\_line}\NormalTok{(}\AttributeTok{linewidth =} \FloatTok{0.3}\NormalTok{, }\AttributeTok{colour =} \StringTok{"grey85"}\NormalTok{),}
+    \AttributeTok{panel.grid.minor =} \FunctionTok{element\_blank}\NormalTok{()}
+\NormalTok{  ) }\SpecialCharTok{+}
+  \FunctionTok{theme}\NormalTok{(}\AttributeTok{axis.text.x =} \FunctionTok{element\_text}\NormalTok{(}\AttributeTok{angle =} \DecValTok{60}\NormalTok{, }\AttributeTok{hjust =} \DecValTok{1}\NormalTok{),}
+        \AttributeTok{legend.position =} \StringTok{"bottom"}\NormalTok{)}
+\NormalTok{gdist }\OtherTok{\textless{}{-}} \FunctionTok{dbGetQuery}\NormalTok{(con, }\FunctionTok{sprintf}\NormalTok{(}\StringTok{"}
+\StringTok{  SELECT games}
+\StringTok{  FROM read\_parquet(\%s)}
+\StringTok{  WHERE games \textless{}= 250}
+\StringTok{"}\NormalTok{, }\FunctionTok{qpath}\NormalTok{(paths}\SpecialCharTok{$}\NormalTok{pm)))}
+
+\FunctionTok{ggplot}\NormalTok{(gdist, }\FunctionTok{aes}\NormalTok{(}\AttributeTok{x=}\NormalTok{games)) }\SpecialCharTok{+}
+  \FunctionTok{geom\_histogram}\NormalTok{(}\AttributeTok{bins =} \DecValTok{30}\NormalTok{, }\AttributeTok{fill =} \StringTok{"steelblue"}\NormalTok{, }\AttributeTok{color =} \StringTok{"steelblue"}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{coord\_cartesian}\NormalTok{(}\AttributeTok{xlim =} \FunctionTok{c}\NormalTok{(}\DecValTok{0}\NormalTok{, }\DecValTok{250}\NormalTok{)) }\SpecialCharTok{+}
+  \FunctionTok{scale\_y\_continuous}\NormalTok{(}\AttributeTok{labels =} \FunctionTok{label\_comma}\NormalTok{()) }\SpecialCharTok{+}
+  \FunctionTok{labs}\NormalTok{(}\AttributeTok{x =} \StringTok{"Games per Player in a Given Month"}\NormalTok{, }\AttributeTok{y =} \StringTok{"Rows"}\NormalTok{, }\AttributeTok{title =} \StringTok{"Player{-}Month Reliability Varies Widely"}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{theme\_few}\NormalTok{()}
+\NormalTok{panel\_len }\OtherTok{\textless{}{-}} \FunctionTok{dbGetQuery}\NormalTok{(con, }\FunctionTok{sprintf}\NormalTok{(}\StringTok{"}
+\StringTok{  WITH x AS (}
+\StringTok{    SELECT player, COUNT(DISTINCT month) AS n\_months}
+\StringTok{    FROM read\_parquet(\%s)}
+\StringTok{    GROUP BY player}
+\StringTok{  )}
+\StringTok{  SELECT n\_months, COUNT(*) AS n\_players}
+\StringTok{  FROM x}
+\StringTok{  GROUP BY n\_months}
+\StringTok{  ORDER BY n\_months}
+\StringTok{"}\NormalTok{, }\FunctionTok{qpath}\NormalTok{(paths}\SpecialCharTok{$}\NormalTok{pm)))}
+
+\FunctionTok{ggplot}\NormalTok{(panel\_len, }\FunctionTok{aes}\NormalTok{(}\AttributeTok{x =}\NormalTok{ n\_months, }\AttributeTok{y =}\NormalTok{ n\_players)) }\SpecialCharTok{+}
+  \FunctionTok{geom\_col}\NormalTok{(}\AttributeTok{fill =} \StringTok{"steelblue"}\NormalTok{, }\AttributeTok{color =} \StringTok{"steelblue"}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{scale\_y\_continuous}\NormalTok{() }\SpecialCharTok{+}
+  \FunctionTok{labs}\NormalTok{(}\AttributeTok{x =} \StringTok{"Months Observed per Player"}\NormalTok{, }\AttributeTok{y =} \StringTok{"Players"}\NormalTok{,}
+       \AttributeTok{title =} \StringTok{"Panel Depth: How Long Players Remain Observable"}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{theme\_few}\NormalTok{()}
+\NormalTok{chg }\OtherTok{\textless{}{-}} \FunctionTok{dbGetQuery}\NormalTok{(con, }\FunctionTok{sprintf}\NormalTok{(}\StringTok{"}
+\StringTok{  WITH x AS (}
+\StringTok{    SELECT player, month, avg\_rating}
+\StringTok{    FROM read\_parquet(\%s)}
+\StringTok{  ),}
+\StringTok{  y AS (}
+\StringTok{    SELECT}
+\StringTok{      player,}
+\StringTok{      month,}
+\StringTok{      avg\_rating,}
+\StringTok{      LAG(avg\_rating) OVER (PARTITION BY player ORDER BY month) AS prev\_rating}
+\StringTok{    FROM x}
+\StringTok{  )}
+\StringTok{  SELECT (avg\_rating {-} prev\_rating) AS d\_rating}
+\StringTok{  FROM y}
+\StringTok{  WHERE prev\_rating IS NOT NULL AND d\_rating \textgreater{}= {-}300 AND d\_rating \textless{}= 300}
+\StringTok{"}\NormalTok{, }\FunctionTok{qpath}\NormalTok{(paths}\SpecialCharTok{$}\NormalTok{pm)))}
+
+\FunctionTok{ggplot}\NormalTok{(chg, }\FunctionTok{aes}\NormalTok{(}\AttributeTok{x=}\NormalTok{d\_rating)) }\SpecialCharTok{+}
+  \FunctionTok{geom\_histogram}\NormalTok{(}\AttributeTok{bins=}\DecValTok{80}\NormalTok{, }\AttributeTok{fill =} \StringTok{"steelblue"}\NormalTok{, }\AttributeTok{color =} \StringTok{"steelblue"}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{labs}\NormalTok{(}\AttributeTok{x =} \StringTok{"Month{-}to{-}Month Change in Average Rating"}\NormalTok{, }\AttributeTok{y =} \StringTok{"Count"}\NormalTok{, }
+       \AttributeTok{title =} \StringTok{"Distribution of Within{-}Player Rating Change"}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{theme\_few}\NormalTok{()}
+\NormalTok{vol }\OtherTok{\textless{}{-}} \FunctionTok{dbGetQuery}\NormalTok{(con, }\FunctionTok{sprintf}\NormalTok{(}\StringTok{"}
+\StringTok{  WITH x AS (}
+\StringTok{    SELECT player, month, games, avg\_rating}
+\StringTok{    FROM read\_parquet(\%s)}
+\StringTok{  ),}
+\StringTok{  y AS (}
+\StringTok{    SELECT}
+\StringTok{      player,}
+\StringTok{      month,}
+\StringTok{      games,}
+\StringTok{      avg\_rating,}
+\StringTok{      LAG(avg\_rating) OVER (PARTITION BY player ORDER BY month) AS prev\_rating}
+\StringTok{    FROM x}
+\StringTok{  )}
+\StringTok{  SELECT}
+\StringTok{    games,}
+\StringTok{    ABS(avg\_rating {-} prev\_rating) AS abs\_d\_rating}
+\StringTok{  FROM y}
+\StringTok{  WHERE prev\_rating IS NOT NULL}
+\StringTok{"}\NormalTok{, }\FunctionTok{qpath}\NormalTok{(paths}\SpecialCharTok{$}\NormalTok{pm)))}
+
+\FunctionTok{ggplot}\NormalTok{(vol, }\FunctionTok{aes}\NormalTok{(}\AttributeTok{x =}\NormalTok{ games, }\AttributeTok{y =}\NormalTok{ abs\_d\_rating)) }\SpecialCharTok{+}
+  \FunctionTok{geom\_point}\NormalTok{(}\AttributeTok{alpha =} \FloatTok{0.15}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{scale\_x\_continuous}\NormalTok{(}\AttributeTok{trans =} \StringTok{"log10"}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{labs}\NormalTok{(}\AttributeTok{x =} \StringTok{"Games per Month (Log{-}Transformed)"}\NormalTok{, }\AttributeTok{y =} \StringTok{"Absolute Change in Rating (|Δ|)"}\NormalTok{,}
+       \AttributeTok{title =} \StringTok{"Monthly Rating Volatility Shrinks as Game Volume Rises"}\NormalTok{,}
+       \AttributeTok{subtitle =} \StringTok{"Log{-}Transformed for Legibility"}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{theme\_few}\NormalTok{()}
+\NormalTok{min\_games\_pm   }\OtherTok{\textless{}{-}} \DecValTok{5}     \CommentTok{\# require at least this many games in the month (across all TCs)}
+\NormalTok{min\_moves\_ptm  }\OtherTok{\textless{}{-}} \DecValTok{25}    \CommentTok{\# require at least this many move rows in the month (across all TCs)}
+
+\NormalTok{ltr\_scatter\_all }\OtherTok{\textless{}{-}} \FunctionTok{dbGetQuery}\NormalTok{(con, }\FunctionTok{sprintf}\NormalTok{(}\StringTok{"}
+\StringTok{  WITH pm\_tc AS (}
+\StringTok{    SELECT}
+\StringTok{      player,}
+\StringTok{      month,}
+\StringTok{      avg\_rating,}
+\StringTok{      games}
+\StringTok{    FROM read\_parquet(\%s)}
+\StringTok{    WHERE player IS NOT NULL}
+\StringTok{      AND month  IS NOT NULL}
+\StringTok{      AND avg\_rating IS NOT NULL}
+\StringTok{      AND games IS NOT NULL}
+\StringTok{  ),}
+\StringTok{  pm AS (}
+\StringTok{    {-}{-} collapse across time controls using games{-}weighted avg\_rating}
+\StringTok{    SELECT}
+\StringTok{      player,}
+\StringTok{      month,}
+\StringTok{      SUM(games) AS games\_total,}
+\StringTok{      SUM(avg\_rating * games) / SUM(games) AS avg\_rating\_all}
+\StringTok{    FROM pm\_tc}
+\StringTok{    GROUP BY player, month}
+\StringTok{    HAVING SUM(games) \textgreater{}= \%d}
+\StringTok{  ),}
+\StringTok{  pm\_next AS (}
+\StringTok{    SELECT}
+\StringTok{      player,}
+\StringTok{      month,}
+\StringTok{      games\_total,}
+\StringTok{      avg\_rating\_all,}
+\StringTok{      LEAD(avg\_rating\_all) OVER (PARTITION BY player ORDER BY month) AS next\_rating\_all}
+\StringTok{    FROM pm}
+\StringTok{  ),}
+\StringTok{  delta AS (}
+\StringTok{    SELECT}
+\StringTok{      player,}
+\StringTok{      month,}
+\StringTok{      games\_total,}
+\StringTok{      avg\_rating\_all,}
+\StringTok{      (next\_rating\_all {-} avg\_rating\_all) AS d\_rating\_next}
+\StringTok{    FROM pm\_next}
+\StringTok{    WHERE next\_rating\_all IS NOT NULL}
+\StringTok{  ),}
+\StringTok{  ptm\_tc AS (}
+\StringTok{    SELECT}
+\StringTok{      player,}
+\StringTok{      month,}
+\StringTok{      low\_time\_rate,}
+\StringTok{      move\_rows}
+\StringTok{    FROM read\_parquet(\%s)}
+\StringTok{    WHERE player IS NOT NULL}
+\StringTok{      AND month  IS NOT NULL}
+\StringTok{      AND low\_time\_rate IS NOT NULL}
+\StringTok{      AND move\_rows IS NOT NULL}
+\StringTok{  ),}
+\StringTok{  ptm AS (}
+\StringTok{    {-}{-} collapse across time controls using move\_rows{-}weighted low\_time\_rate}
+\StringTok{    SELECT}
+\StringTok{      player,}
+\StringTok{      month,}
+\StringTok{      SUM(move\_rows) AS move\_rows\_total,}
+\StringTok{      SUM(low\_time\_rate * move\_rows) / SUM(move\_rows) AS low\_time\_rate\_all}
+\StringTok{    FROM ptm\_tc}
+\StringTok{    GROUP BY player, month}
+\StringTok{    HAVING SUM(move\_rows) \textgreater{}= \%d}
+\StringTok{  )}
+\StringTok{  SELECT}
+\StringTok{    d.player,}
+\StringTok{    d.month,}
+\StringTok{    d.avg\_rating\_all,}
+\StringTok{    d.games\_total,}
+\StringTok{    d.d\_rating\_next,}
+\StringTok{    p.low\_time\_rate\_all,}
+\StringTok{    p.move\_rows\_total}
+\StringTok{  FROM delta d}
+\StringTok{  JOIN ptm p USING (player, month)}
+\StringTok{"}\NormalTok{, }\FunctionTok{qpath}\NormalTok{(paths}\SpecialCharTok{$}\NormalTok{pm\_tc), min\_games\_pm,}
+   \FunctionTok{qpath}\NormalTok{(paths}\SpecialCharTok{$}\NormalTok{ptm\_tc), min\_moves\_ptm))}
+
+\FunctionTok{ggplot}\NormalTok{(ltr\_scatter\_all, }\FunctionTok{aes}\NormalTok{(}\AttributeTok{x =}\NormalTok{ low\_time\_rate\_all, }\AttributeTok{y =}\NormalTok{ d\_rating\_next)) }\SpecialCharTok{+}
+  \FunctionTok{geom\_point}\NormalTok{(}\AttributeTok{alpha =} \FloatTok{0.25}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{scale\_x\_continuous}\NormalTok{(}\AttributeTok{labels =} \FunctionTok{percent\_format}\NormalTok{(}\AttributeTok{accuracy =} \DecValTok{1}\NormalTok{)) }\SpecialCharTok{+}
+  \FunctionTok{ylim}\NormalTok{(}\SpecialCharTok{{-}}\DecValTok{225}\NormalTok{, }\DecValTok{225}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{labs}\NormalTok{(}
+    \AttributeTok{x =} \StringTok{"Low{-}Time Rate"}\NormalTok{,}
+    \AttributeTok{y =} \StringTok{"Next{-}Month Δ Rating"}\NormalTok{,}
+    \AttributeTok{title =} \StringTok{"Time Trouble vs Next{-}Month Rating Change"}\NormalTok{,}
+    \AttributeTok{subtitle =} \StringTok{"Collapsed Across Time Controls"}
+\NormalTok{  ) }\SpecialCharTok{+}
+  \FunctionTok{theme\_few}\NormalTok{()}
+
+\NormalTok{top\_openings }\OtherTok{\textless{}{-}} \FunctionTok{dbGetQuery}\NormalTok{(con, }\FunctionTok{sprintf}\NormalTok{(}\StringTok{"}
+\StringTok{  WITH x AS (}
+\StringTok{    SELECT opening, SUM(games) AS total\_games}
+\StringTok{    FROM read\_parquet(\%s)}
+\StringTok{    WHERE tc\_bucket=\textquotesingle{}blitz\textquotesingle{} AND opening IS NOT NULL}
+\StringTok{    GROUP BY opening}
+\StringTok{  )}
+\StringTok{  SELECT opening}
+\StringTok{  FROM x}
+\StringTok{  ORDER BY total\_games DESC}
+\StringTok{  LIMIT 8}
+\StringTok{"}\NormalTok{, }\FunctionTok{qpath}\NormalTok{(paths}\SpecialCharTok{$}\NormalTok{mom\_tc)))}
+
+\NormalTok{open\_list }\OtherTok{\textless{}{-}} \FunctionTok{paste0}\NormalTok{(}\StringTok{"(\textquotesingle{}"}\NormalTok{, }\FunctionTok{paste}\NormalTok{(}\FunctionTok{gsub}\NormalTok{(}\StringTok{"\textquotesingle{}"}\NormalTok{, }\StringTok{"\textquotesingle{}\textquotesingle{}"}\NormalTok{, top\_openings}\SpecialCharTok{$}\NormalTok{opening), }\AttributeTok{collapse=}\StringTok{"\textquotesingle{},\textquotesingle{}"}\NormalTok{), }\StringTok{"\textquotesingle{})"}\NormalTok{)}
+
+\NormalTok{trend }\OtherTok{\textless{}{-}} \FunctionTok{dbGetQuery}\NormalTok{(con, }\FunctionTok{sprintf}\NormalTok{(}\StringTok{"}
+\StringTok{  WITH filtered AS (}
+\StringTok{    SELECT month, tc\_bucket, opening, games}
+\StringTok{    FROM read\_parquet(\%s)}
+\StringTok{    WHERE tc\_bucket=\textquotesingle{}blitz\textquotesingle{}}
+\StringTok{      AND opening IN \%s}
+\StringTok{      AND opening IS NOT NULL}
+\StringTok{  ),}
+\StringTok{  opening\_level AS (}
+\StringTok{    SELECT}
+\StringTok{      month,}
+\StringTok{      tc\_bucket,}
+\StringTok{      opening,}
+\StringTok{      SUM(games) AS games}
+\StringTok{    FROM filtered}
+\StringTok{    GROUP BY month, tc\_bucket, opening}
+\StringTok{  )}
+\StringTok{  SELECT}
+\StringTok{    month,}
+\StringTok{    tc\_bucket,}
+\StringTok{    opening,}
+\StringTok{    games,}
+\StringTok{    CAST(games AS DOUBLE) / SUM(games) OVER (PARTITION BY month, tc\_bucket) AS share}
+\StringTok{  FROM opening\_level}
+\StringTok{  ORDER BY month, opening}
+\StringTok{"}\NormalTok{, }\FunctionTok{qpath}\NormalTok{(paths}\SpecialCharTok{$}\NormalTok{mom\_tc), open\_list))}
+
+
+\FunctionTok{ggplot}\NormalTok{(trend, }\FunctionTok{aes}\NormalTok{(}\AttributeTok{x=}\NormalTok{month, }\AttributeTok{y=}\NormalTok{share, }\AttributeTok{color=}\NormalTok{opening, }\AttributeTok{group=}\NormalTok{opening)) }\SpecialCharTok{+}
+  \FunctionTok{geom\_line}\NormalTok{(}\AttributeTok{linewidth =} \DecValTok{1}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{scale\_y\_continuous}\NormalTok{(}\AttributeTok{labels=}\FunctionTok{percent\_format}\NormalTok{(}\AttributeTok{accuracy=}\FloatTok{0.1}\NormalTok{)) }\SpecialCharTok{+}
+  \FunctionTok{labs}\NormalTok{(}\AttributeTok{x=}\StringTok{"Month"}\NormalTok{, }\AttributeTok{y=}\StringTok{"Share of Games"}\NormalTok{, }\AttributeTok{color =} \StringTok{""}\NormalTok{, }
+  \AttributeTok{title=}\StringTok{"Opening Share Over Time (Blitz)"}\NormalTok{, }\AttributeTok{subtitle =} \StringTok{"Top Eight Openings in Terms of Game Share"}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{scale\_color\_few}\NormalTok{() }\SpecialCharTok{+}
+  \FunctionTok{theme\_few}\NormalTok{() }\SpecialCharTok{+}
+  \FunctionTok{theme}\NormalTok{(}
+    \AttributeTok{panel.grid.major.x =} \FunctionTok{element\_blank}\NormalTok{(),}
+    \AttributeTok{panel.grid.major.y =} \FunctionTok{element\_line}\NormalTok{(}\AttributeTok{linewidth =} \FloatTok{0.3}\NormalTok{, }\AttributeTok{colour =} \StringTok{"grey85"}\NormalTok{),}
+    \AttributeTok{panel.grid.minor =} \FunctionTok{element\_blank}\NormalTok{(),}
+    \AttributeTok{legend.position =} \StringTok{"bottom"}\NormalTok{,}
+    \AttributeTok{axis.text.x =} \FunctionTok{element\_text}\NormalTok{(}\AttributeTok{angle=}\DecValTok{60}\NormalTok{, }\AttributeTok{hjust=}\DecValTok{1}\NormalTok{)}
+\NormalTok{  ) }\SpecialCharTok{+} 
+  \FunctionTok{guides}\NormalTok{(}\AttributeTok{color =} \FunctionTok{guide\_legend}\NormalTok{(}\AttributeTok{nrow =} \DecValTok{4}\NormalTok{, }\AttributeTok{byrow =} \ConstantTok{TRUE}\NormalTok{))}
+\CommentTok{\# settings}
+\NormalTok{tc\_use }\OtherTok{\textless{}{-}} \StringTok{"blitz"}
+\NormalTok{bin\_width }\OtherTok{\textless{}{-}} \DecValTok{200}
+\NormalTok{top\_k }\OtherTok{\textless{}{-}} \DecValTok{8}             \CommentTok{\# number of openings to plot}
+\NormalTok{min\_bin\_total }\OtherTok{\textless{}{-}} \DecValTok{2000}  \CommentTok{\# min player{-}games in a rating bin}
+
+\CommentTok{\# pick top openings within tc\_bucket (weighted by games)}
+\NormalTok{top\_openings }\OtherTok{\textless{}{-}} \FunctionTok{dbGetQuery}\NormalTok{(con, }\FunctionTok{sprintf}\NormalTok{(}\StringTok{"}
+\StringTok{  WITH x AS (}
+\StringTok{    SELECT opening, SUM(games) AS total\_games}
+\StringTok{    FROM read\_parquet(\%s)}
+\StringTok{    WHERE tc\_bucket = \textquotesingle{}\%s\textquotesingle{}}
+\StringTok{      AND opening IS NOT NULL}
+\StringTok{    GROUP BY opening}
+\StringTok{  )}
+\StringTok{  SELECT opening}
+\StringTok{  FROM x}
+\StringTok{  ORDER BY total\_games DESC}
+\StringTok{  LIMIT \%d}
+\StringTok{"}\NormalTok{, }\FunctionTok{qpath}\NormalTok{(paths}\SpecialCharTok{$}\NormalTok{pom\_tc), tc\_use, top\_k))}
+
+\NormalTok{open\_list }\OtherTok{\textless{}{-}} \FunctionTok{paste0}\NormalTok{(}
+  \StringTok{"(\textquotesingle{}"}\NormalTok{, }\FunctionTok{paste}\NormalTok{(}\FunctionTok{gsub}\NormalTok{(}\StringTok{"\textquotesingle{}"}\NormalTok{, }\StringTok{"\textquotesingle{}\textquotesingle{}"}\NormalTok{, top\_openings}\SpecialCharTok{$}\NormalTok{opening), }\AttributeTok{collapse=}\StringTok{"\textquotesingle{},\textquotesingle{}"}\NormalTok{), }\StringTok{"\textquotesingle{})"}
+\NormalTok{)}
+
+\CommentTok{\# compute opening share within rating bins}
+\NormalTok{trend\_rating }\OtherTok{\textless{}{-}} \FunctionTok{dbGetQuery}\NormalTok{(con, }\FunctionTok{sprintf}\NormalTok{(}\StringTok{"}
+\StringTok{  WITH base AS (}
+\StringTok{    SELECT}
+\StringTok{      tc\_bucket,}
+\StringTok{      opening,}
+\StringTok{      avg\_rating,}
+\StringTok{      games}
+\StringTok{    FROM read\_parquet(\%s)}
+\StringTok{    WHERE tc\_bucket = \textquotesingle{}\%s\textquotesingle{}}
+\StringTok{      AND opening IN \%s}
+\StringTok{      AND opening IS NOT NULL}
+\StringTok{      AND avg\_rating IS NOT NULL}
+\StringTok{      AND games IS NOT NULL}
+\StringTok{  ),}
+\StringTok{  binned AS (}
+\StringTok{    SELECT}
+\StringTok{      opening,}
+\StringTok{      CAST(FLOOR(avg\_rating / \%d) * \%d AS INTEGER) AS rating\_bin\_lo,}
+\StringTok{      SUM(games) AS player\_games}
+\StringTok{    FROM base}
+\StringTok{    GROUP BY opening, rating\_bin\_lo}
+\StringTok{  ),}
+\StringTok{  totals AS (}
+\StringTok{    SELECT}
+\StringTok{      rating\_bin\_lo,}
+\StringTok{      SUM(player\_games) AS bin\_total}
+\StringTok{    FROM binned}
+\StringTok{    GROUP BY rating\_bin\_lo}
+\StringTok{  )}
+\StringTok{  SELECT}
+\StringTok{    b.rating\_bin\_lo,}
+\StringTok{    (b.rating\_bin\_lo + \%d {-} 1) AS rating\_bin\_hi,}
+\StringTok{    b.opening,}
+\StringTok{    b.player\_games,}
+\StringTok{    t.bin\_total,}
+\StringTok{    CAST(b.player\_games AS DOUBLE) / t.bin\_total AS share}
+\StringTok{  FROM binned b}
+\StringTok{  JOIN totals t USING (rating\_bin\_lo)}
+\StringTok{  WHERE t.bin\_total \textgreater{}= \%d}
+\StringTok{  ORDER BY b.rating\_bin\_lo, b.opening}
+\StringTok{"}\NormalTok{, }\FunctionTok{qpath}\NormalTok{(paths}\SpecialCharTok{$}\NormalTok{pom\_tc), tc\_use, open\_list,}
+\NormalTok{   bin\_width, bin\_width, bin\_width, min\_bin\_total))}
+
+
+\NormalTok{trend\_rating }\OtherTok{\textless{}{-}}\NormalTok{ trend\_rating }\SpecialCharTok{|\textgreater{}}
+  \FunctionTok{mutate}\NormalTok{(}
+    \AttributeTok{rating\_bin =} \FunctionTok{paste0}\NormalTok{(rating\_bin\_lo, }\StringTok{"\textbackslash{}u2013"}\NormalTok{, rating\_bin\_hi),}
+    \AttributeTok{rating\_bin =} \FunctionTok{factor}\NormalTok{(rating\_bin, }\AttributeTok{levels =} \FunctionTok{unique}\NormalTok{(rating\_bin))}
+\NormalTok{  )}
+
+\FunctionTok{ggplot}\NormalTok{(trend\_rating, }\FunctionTok{aes}\NormalTok{(}\AttributeTok{x =}\NormalTok{ rating\_bin, }\AttributeTok{y =}\NormalTok{ share, }\AttributeTok{color =}\NormalTok{ opening, }\AttributeTok{group =}\NormalTok{ opening)) }\SpecialCharTok{+}
+  \FunctionTok{geom\_line}\NormalTok{(}\AttributeTok{linewidth =} \DecValTok{1}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{geom\_point}\NormalTok{(}\AttributeTok{size =} \DecValTok{2}\NormalTok{, }\AttributeTok{alpha =} \FloatTok{0.7}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{scale\_y\_continuous}\NormalTok{(}\AttributeTok{labels =} \FunctionTok{percent\_format}\NormalTok{(}\AttributeTok{accuracy =} \FloatTok{0.1}\NormalTok{)) }\SpecialCharTok{+}
+  \FunctionTok{labs}\NormalTok{(}
+    \AttributeTok{x =} \StringTok{"Rating"}\NormalTok{,}
+    \AttributeTok{y =} \StringTok{"Share of Player{-}Games"}\NormalTok{,}
+    \AttributeTok{title =} \FunctionTok{paste0}\NormalTok{(}\StringTok{"Opening Share by Rating (Blitz)"}\NormalTok{),}
+    \AttributeTok{color =} \StringTok{""}
+\NormalTok{  ) }\SpecialCharTok{+}
+  \FunctionTok{scale\_color\_few}\NormalTok{() }\SpecialCharTok{+}
+  \FunctionTok{theme\_few}\NormalTok{() }\SpecialCharTok{+}
+  \FunctionTok{theme}\NormalTok{(}
+    \AttributeTok{panel.grid.major.x =} \FunctionTok{element\_blank}\NormalTok{(),}
+    \AttributeTok{panel.grid.major.y =} \FunctionTok{element\_line}\NormalTok{(}\AttributeTok{linewidth =} \FloatTok{0.3}\NormalTok{, }\AttributeTok{colour =} \StringTok{"grey85"}\NormalTok{),}
+    \AttributeTok{panel.grid.minor =} \FunctionTok{element\_blank}\NormalTok{(),}
+    \AttributeTok{legend.position =} \StringTok{"bottom"}\NormalTok{,}
+    \AttributeTok{axis.text.x =} \FunctionTok{element\_text}\NormalTok{(}\AttributeTok{angle=}\DecValTok{60}\NormalTok{, }\AttributeTok{hjust=}\DecValTok{1}\NormalTok{)}
+\NormalTok{  ) }\SpecialCharTok{+} 
+  \FunctionTok{guides}\NormalTok{(}\AttributeTok{color =} \FunctionTok{guide\_legend}\NormalTok{(}\AttributeTok{nrow =} \DecValTok{4}\NormalTok{, }\AttributeTok{byrow =} \ConstantTok{TRUE}\NormalTok{))}
+\NormalTok{time\_bin }\OtherTok{\textless{}{-}} \FunctionTok{dbGetQuery}\NormalTok{(con, }\FunctionTok{sprintf}\NormalTok{(}\StringTok{"}
+\StringTok{  SELECT}
+\StringTok{    tc\_bucket,}
+\StringTok{    floor(avg\_rating/100)*100 AS rating\_bin,}
+\StringTok{    AVG(avg\_time\_spent) AS mean\_time\_spent,}
+\StringTok{    SUM(move\_rows) AS total\_moves}
+\StringTok{  FROM read\_parquet(\%s)}
+\StringTok{  GROUP BY tc\_bucket, rating\_bin}
+\StringTok{  HAVING total\_moves \textgreater{}= 20000}
+\StringTok{  ORDER BY tc\_bucket, rating\_bin}
+\StringTok{"}\NormalTok{, }\FunctionTok{qpath}\NormalTok{(paths}\SpecialCharTok{$}\NormalTok{ptm\_tc)))}
+
+\FunctionTok{ggplot}\NormalTok{(time\_bin, }\FunctionTok{aes}\NormalTok{(}\AttributeTok{x=}\NormalTok{rating\_bin, }\AttributeTok{y=}\NormalTok{mean\_time\_spent)) }\SpecialCharTok{+}
+  \FunctionTok{geom\_line}\NormalTok{() }\SpecialCharTok{+}
+    \FunctionTok{facet\_wrap}\NormalTok{(}\SpecialCharTok{\textasciitilde{}}\FunctionTok{factor}\NormalTok{(tc\_bucket, }\AttributeTok{levels =} \FunctionTok{c}\NormalTok{(}\StringTok{"blitz"}\NormalTok{, }\StringTok{"rapid"}\NormalTok{, }\StringTok{"classical"}\NormalTok{)), }\AttributeTok{scales=}\StringTok{"free\_y"}\NormalTok{, }\AttributeTok{labeller =} \FunctionTok{as\_labeller}\NormalTok{(}\FunctionTok{c}\NormalTok{(}
+      \AttributeTok{blitz =} \StringTok{"Blitz"}\NormalTok{,}
+      \AttributeTok{rapid =} \StringTok{"Rapid"}\NormalTok{,}
+      \AttributeTok{classical =} \StringTok{"Classical"}
+\NormalTok{    ))) }\SpecialCharTok{+}
+  \FunctionTok{labs}\NormalTok{(}\AttributeTok{x=}\StringTok{"Player Rating"}\NormalTok{, }\AttributeTok{y=}\StringTok{"Average Time per Move (Seconds)"}\NormalTok{, }\AttributeTok{title=}\StringTok{"Thinking Time Varies by Skill and Time Control"}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{theme\_few}\NormalTok{() }\SpecialCharTok{+} 
+  \FunctionTok{theme}\NormalTok{(}
+    \AttributeTok{panel.grid.major.x =} \FunctionTok{element\_blank}\NormalTok{(),}
+    \AttributeTok{panel.grid.major.y =} \FunctionTok{element\_line}\NormalTok{(}\AttributeTok{linewidth =} \FloatTok{0.3}\NormalTok{, }\AttributeTok{colour =} \StringTok{"grey85"}\NormalTok{),}
+    \AttributeTok{panel.grid.minor =} \FunctionTok{element\_blank}\NormalTok{(),}
+    \AttributeTok{legend.position =} \StringTok{"bottom"}
+\NormalTok{  )}
+\NormalTok{phase }\OtherTok{\textless{}{-}} \FunctionTok{dbGetQuery}\NormalTok{(con, }\FunctionTok{sprintf}\NormalTok{(}\StringTok{"}
+\StringTok{  SELECT}
+\StringTok{    tc\_bucket,}
+\StringTok{    FLOOR(avg\_rating/200)*200 AS rating\_bin,}
+\StringTok{    AVG(avg\_time\_opening) AS t\_open,}
+\StringTok{    AVG(avg\_time\_middlegame) AS t\_mid,}
+\StringTok{    AVG(avg\_time\_endgame) AS t\_end,}
+\StringTok{    SUM(move\_rows) AS total\_moves}
+\StringTok{  FROM read\_parquet(\%s)}
+\StringTok{  GROUP BY tc\_bucket, rating\_bin}
+\StringTok{  HAVING total\_moves \textgreater{}= 10000}
+\StringTok{  ORDER BY tc\_bucket, rating\_bin}
+\StringTok{"}\NormalTok{, }\FunctionTok{qpath}\NormalTok{(paths}\SpecialCharTok{$}\NormalTok{ptm\_tc)))}
+
+\NormalTok{phase\_long }\OtherTok{\textless{}{-}}\NormalTok{ phase }\SpecialCharTok{|\textgreater{}}
+  \FunctionTok{pivot\_longer}\NormalTok{(}\AttributeTok{cols=}\FunctionTok{c}\NormalTok{(t\_open, t\_mid, t\_end),}
+                      \AttributeTok{names\_to=}\StringTok{"phase"}\NormalTok{, }\AttributeTok{values\_to=}\StringTok{"sec"}\NormalTok{)}
+
+\FunctionTok{ggplot}\NormalTok{(phase\_long, }\FunctionTok{aes}\NormalTok{(}\AttributeTok{x=}\NormalTok{rating\_bin, }\AttributeTok{y=}\NormalTok{sec, }\AttributeTok{color=}\NormalTok{phase, }\AttributeTok{group=}\NormalTok{phase)) }\SpecialCharTok{+}
+  \FunctionTok{geom\_line}\NormalTok{() }\SpecialCharTok{+}
+  \FunctionTok{facet\_wrap}\NormalTok{(}\SpecialCharTok{\textasciitilde{}}\FunctionTok{factor}\NormalTok{(tc\_bucket, }\AttributeTok{levels =} \FunctionTok{c}\NormalTok{(}\StringTok{"blitz"}\NormalTok{, }\StringTok{"rapid"}\NormalTok{, }\StringTok{"classical"}\NormalTok{)), }\AttributeTok{scales=}\StringTok{"free\_y"}\NormalTok{, }\AttributeTok{labeller =} \FunctionTok{as\_labeller}\NormalTok{(}\FunctionTok{c}\NormalTok{(}
+      \AttributeTok{blitz =} \StringTok{"Blitz"}\NormalTok{,}
+      \AttributeTok{rapid =} \StringTok{"Rapid"}\NormalTok{,}
+      \AttributeTok{classical =} \StringTok{"Classical"}
+\NormalTok{    ))) }\SpecialCharTok{+}
+  \FunctionTok{labs}\NormalTok{(}\AttributeTok{x=}\StringTok{"Rating"}\NormalTok{, }\AttributeTok{y=}\StringTok{"Seconds per Move"}\NormalTok{, }\AttributeTok{color =} \StringTok{"Phase"}\NormalTok{,}
+       \AttributeTok{title=}\StringTok{"Phase Time Allocation by Rating"}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{scale\_color\_few}\NormalTok{(}\AttributeTok{labels =} \FunctionTok{c}\NormalTok{(}\StringTok{"Endgame"}\NormalTok{, }\StringTok{"Middlegame"}\NormalTok{, }\StringTok{"Opening"}\NormalTok{)) }\SpecialCharTok{+}
+  \FunctionTok{theme\_few}\NormalTok{() }\SpecialCharTok{+} 
+  \FunctionTok{theme}\NormalTok{(}
+    \AttributeTok{panel.grid.major.x =} \FunctionTok{element\_blank}\NormalTok{(),}
+    \AttributeTok{panel.grid.major.y =} \FunctionTok{element\_line}\NormalTok{(}\AttributeTok{linewidth =} \FloatTok{0.3}\NormalTok{, }\AttributeTok{colour =} \StringTok{"grey85"}\NormalTok{),}
+    \AttributeTok{panel.grid.minor =} \FunctionTok{element\_blank}\NormalTok{(),}
+    \AttributeTok{legend.position =} \StringTok{"bottom"}
+\NormalTok{  )}
+
+\NormalTok{div\_strata }\OtherTok{\textless{}{-}} \FunctionTok{dbGetQuery}\NormalTok{(con, }\FunctionTok{sprintf}\NormalTok{(}\StringTok{"}
+\StringTok{  WITH x AS (}
+\StringTok{    SELECT player, month, opening\_diversity, games, avg\_rating}
+\StringTok{    FROM read\_parquet(\%s)}
+\StringTok{    WHERE opening\_diversity IS NOT NULL}
+\StringTok{      AND games IS NOT NULL}
+\StringTok{      AND avg\_rating IS NOT NULL}
+\StringTok{  ),}
+\StringTok{  y AS (}
+\StringTok{    SELECT *,}
+\StringTok{      LEAD(avg\_rating) OVER (PARTITION BY player ORDER BY month) AS next\_rating}
+\StringTok{    FROM x}
+\StringTok{  ),}
+\StringTok{  z AS (}
+\StringTok{    SELECT}
+\StringTok{      CAST(FLOOR(avg\_rating/200)*200 AS INTEGER) AS rating\_bin,}
+\StringTok{      CASE}
+\StringTok{        WHEN games \textless{} 10 THEN \textquotesingle{}\textless{}10\textquotesingle{}}
+\StringTok{        WHEN games \textless{} 25 THEN \textquotesingle{}10–24\textquotesingle{}}
+\StringTok{        WHEN games \textless{} 60 THEN \textquotesingle{}25–59\textquotesingle{}}
+\StringTok{        ELSE \textquotesingle{}60+\textquotesingle{}}
+\StringTok{      END AS games\_bin,}
+\StringTok{      opening\_diversity,}
+\StringTok{      (next\_rating {-} avg\_rating) AS d\_rating\_next}
+\StringTok{    FROM y}
+\StringTok{    WHERE next\_rating IS NOT NULL}
+\StringTok{  )}
+\StringTok{  SELECT}
+\StringTok{    rating\_bin,}
+\StringTok{    games\_bin,}
+\StringTok{    opening\_diversity,}
+\StringTok{    AVG(d\_rating\_next) AS mean\_d,}
+\StringTok{    COUNT(*) AS n}
+\StringTok{  FROM z}
+\StringTok{  GROUP BY rating\_bin, games\_bin, opening\_diversity}
+\StringTok{  HAVING n \textgreater{}= 5}
+\StringTok{  ORDER BY rating\_bin, games\_bin, opening\_diversity}
+\StringTok{"}\NormalTok{, }\FunctionTok{qpath}\NormalTok{(paths}\SpecialCharTok{$}\NormalTok{pm)))}
+
+\NormalTok{div\_strata }\OtherTok{\textless{}{-}}\NormalTok{ div\_strata }\SpecialCharTok{|\textgreater{}}
+  \FunctionTok{mutate}\NormalTok{(}\AttributeTok{games\_bin =} \FunctionTok{factor}\NormalTok{(games\_bin, }\AttributeTok{levels =} \FunctionTok{c}\NormalTok{(}\StringTok{"60+"}\NormalTok{, }\StringTok{"25–59"}\NormalTok{, }\StringTok{"10–24"}\NormalTok{, }\StringTok{"\textless{}10"}\NormalTok{)))}
+
+\FunctionTok{ggplot}\NormalTok{(div\_strata, }\FunctionTok{aes}\NormalTok{(}\AttributeTok{x=}\NormalTok{opening\_diversity, }\AttributeTok{y=}\NormalTok{mean\_d, }\AttributeTok{color=}\NormalTok{games\_bin)) }\SpecialCharTok{+}
+  \FunctionTok{geom\_line}\NormalTok{(}\AttributeTok{alpha =} \DecValTok{1}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{facet\_wrap}\NormalTok{(}\SpecialCharTok{\textasciitilde{}}\NormalTok{rating\_bin, }\AttributeTok{scales=}\StringTok{"free\_y"}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{labs}\NormalTok{(}\AttributeTok{x=}\StringTok{"Opening Diversity (Within{-}Month)"}\NormalTok{, }\AttributeTok{y=}\StringTok{"Mean Next{-}Month Δ Rating"}\NormalTok{,}
+       \AttributeTok{color=}\StringTok{"Games"}\NormalTok{,}
+       \AttributeTok{title=}\StringTok{"Opening Diversity vs Improvement"}\NormalTok{,}
+       \AttributeTok{subtitle =} \StringTok{"Stratified by Games and Rating"}\NormalTok{) }\SpecialCharTok{+}
+  \FunctionTok{scale\_color\_few}\NormalTok{() }\SpecialCharTok{+}
+  \FunctionTok{theme\_few}\NormalTok{() }\SpecialCharTok{+} 
+  \FunctionTok{theme}\NormalTok{(}
+    \AttributeTok{panel.grid.major.x =} \FunctionTok{element\_blank}\NormalTok{(),}
+    \AttributeTok{panel.grid.major.y =} \FunctionTok{element\_line}\NormalTok{(}\AttributeTok{linewidth =} \FloatTok{0.3}\NormalTok{, }\AttributeTok{colour =} \StringTok{"grey85"}\NormalTok{),}
+    \AttributeTok{panel.grid.minor =} \FunctionTok{element\_blank}\NormalTok{(),}
+    \AttributeTok{legend.position =} \StringTok{"bottom"}
+\NormalTok{  )}
+
 \CommentTok{\# Use this code to display useful graphs that do not belong in the body of the paper.}
 \CommentTok{\# For example use this area for model validation graphs like residual versus fit.}
 \CommentTok{\# Use this area to show results that are in table format}
 \CommentTok{\# Write your cleaning code here}
+\ControlFlowTok{if}\NormalTok{ (}\FunctionTok{exists}\NormalTok{(}\StringTok{"con"}\NormalTok{) }\SpecialCharTok{\&\&}\NormalTok{ DBI}\SpecialCharTok{::}\FunctionTok{dbIsValid}\NormalTok{(con)) \{}
+\NormalTok{  DBI}\SpecialCharTok{::}\FunctionTok{dbDisconnect}\NormalTok{(con, }\AttributeTok{shutdown =} \ConstantTok{TRUE}\NormalTok{)}
+\NormalTok{\}}
 \end{Highlighting}
 \end{Shaded}
 
 
 
+\renewcommand\refname{Cleanup (Header To-Be Removed for Final Draft)}
   \bibliography{references.bib}
 
 
