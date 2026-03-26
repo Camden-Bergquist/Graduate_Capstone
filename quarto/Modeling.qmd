@@ -1,0 +1,4995 @@
+---
+title: "Modeling"
+format: html
+---
+
+#### Setup
+
+```{r Setup, message = FALSE, warning = FALSE}
+
+# Core data + infrastructure
+library(yaml)       # read pipeline.yml (paths, parameters)
+library(arrow)      # Parquet IO
+library(DBI)        # database interface
+library(duckdb)     # fast SQL over Parquet
+
+# Data manipulation + dates
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(purrr)
+library(lubridate)
+library(forcats) # factor helpers (bins/labels)
+
+# Visualization (EDA + diagnostics)
+library(ggplot2)
+library(scales)
+library(patchwork) # combine plots
+
+# Modeling utilities + inference
+library(broom) # tidy model outputs
+library(modelr) # add_predictions / resample helpers
+library(sandwich) # robust/clustered SEs
+library(lmtest) # coeftest with robust SEs
+
+# Resampling / validation
+library(rsample) # time splits, rolling origin
+library(yardstick) # performance metrics
+
+# Tidymodels umbrella
+library(tidymodels)
+
+# Metagame dynamics: GAM / smoothing
+library(mgcv) # GAMs
+
+# Opening popularity: multinomial + count models
+library(nnet) # multinomial logistic regression (multinom)
+library(VGAM) # flexible categorical models
+library(MASS) # glm.nb (NegBin), rlm (robust regression)
+
+# Compositional / proportion modeling
+library(betareg) # beta regression for rates in (0,1)
+library(DirichletReg) # Dirichlet regression for compositions
+
+# Time-use: robust + quantile regression
+library(quantreg) # quantile regression
+library(robustbase) # additional robust methods
+
+# Player progression: regularization + panel models
+library(glmnet) # ridge/lasso/elastic net
+library(fixest) # fixed effects, clustered SEs (panel-friendly)
+library(lme4) # mixed effects (random effects)
+library(glmmTMB) # mixed models + many families (optional but powerful)
+
+# Tree-based predictive models
+library(ranger) # random forest
+library(xgboost) # gradient boosting
+
+# Player categorization: dimensionality reduction + clustering
+# PCA is in base stats (prcomp), but these help with nonlinear DR + clustering
+library(uwot) # UMAP
+library(cluster) # silhouette, clustering helpers
+library(ClusterR) # Replacement for base-R kmeans
+library(mclust) # Gaussian mixture models
+
+# Package conflicts
+library(conflicted)
+conflicts_prefer(dplyr::slice)
+conflicts_prefer(dplyr::filter)
+conflicts_prefer(dplyr::lag)
+conflicts_prefer(dplyr::select)
+conflicts_prefer(dplyr::arrange)
+conflicts_prefer(dplyr::mutate)
+conflicts_prefer(dplyr::summarise)
+conflicts_prefer(dplyr::count)
+conflicts_prefer(purrr::map)
+
+pm <- read_parquet("../data/derived/full_datasets/player_month.parquet")
+pm_tc <- read_parquet("../data/derived/full_datasets/player_month_tc.parquet")
+pom_tc <- read_parquet("../data/derived/full_datasets/player_opening_month_tc.parquet")
+ptm_tc <- read_parquet("../data/derived/full_datasets/player_time_month_tc.parquet")
+mm_tc <- read_parquet("../data/derived/full_datasets/meta_month_tc.parquet")
+mom_tc <- read_parquet("../data/derived/full_datasets/meta_opening_month_tc.parquet")
+mvm_tc <- read_parquet("../data/derived/full_datasets/moves_month_tc.parquet")
+```
+
+```{r Inference Helpers}
+# ---- Dependence-aware inference helpers ----
+
+# Tidy coeftest output
+tidy_ct <- function(ct) {
+  broom::tidy(ct) |>
+    dplyr::rename(
+      estimate = estimate,
+      std.error = std.error,
+      statistic = statistic,
+      p.value = p.value
+    )
+}
+
+# Newey-West / HAC tidy table for lm
+tidy_hac <- function(mod, lag = 3, prewhite = FALSE, adjust = TRUE) {
+  vc <- sandwich::NeweyWest(mod, lag = lag, prewhite = prewhite, adjust = adjust)
+  ct <- lmtest::coeftest(mod, vcov. = vc)
+  tidy_ct(ct)
+}
+
+# Compare classical vs HC1 vs HAC for lm models
+compare_lm_ses <- function(mod, hac_lag = 3) {
+  cl <- broom::tidy(mod) |>
+    dplyr::select(term, estimate, std.error, p.value) |>
+    dplyr::rename(se_classic = std.error, p_classic = p.value)
+
+  hc <- {
+    ct <- lmtest::coeftest(mod, vcov. = sandwich::vcovHC(mod, type = "HC1"))
+    tidy_ct(ct)
+  } |>
+    dplyr::select(term, std.error, p.value) |>
+    dplyr::rename(se_hc1 = std.error, p_hc1 = p.value)
+
+  hac <- tidy_hac(mod, lag = hac_lag) |>
+    dplyr::select(term, std.error, p.value) |>
+    dplyr::rename(se_hac = std.error, p_hac = p.value)
+
+  cl |>
+    dplyr::left_join(hc, by = "term") |>
+    dplyr::left_join(hac, by = "term")
+}
+
+# Residual ACF table for quick autocorrelation diagnostics
+acf_tbl <- function(mod, lag.max = 12) {
+  ac <- stats::acf(resid(mod), plot = FALSE, lag.max = lag.max)
+  tibble::tibble(
+    lag = as.numeric(ac$lag)[-1],
+    acf = as.numeric(ac$acf)[-1]
+  )
+}
+
+plot_resid_acf <- function(mod, title = "", lag.max = 12) {
+  acf_df <- acf_tbl(mod, lag.max = lag.max)
+  ggplot(acf_df, aes(lag, acf)) +
+    geom_col() +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    labs(title = paste0(title, " — Residual ACF"), x = "Lag", y = "ACF") +
+    theme_minimal()
+}
+
+# Residual/fitted and QQ plots for lm objects
+plot_lm_basic <- function(mod, title = "") {
+  d <- tibble::tibble(
+    fitted = fitted(mod),
+    resid  = resid(mod)
+  )
+
+  p1 <- ggplot(d, aes(x = fitted, y = resid)) +
+    geom_point(alpha = 0.35) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    labs(title = paste0(title, " — Residuals vs Fitted"), x = "Fitted", y = "Residual") +
+    theme_minimal()
+
+  p2 <- ggplot(d, aes(sample = resid)) +
+    stat_qq(alpha = 0.35) +
+    stat_qq_line() +
+    labs(title = paste0(title, " — QQ plot"), x = "Theoretical", y = "Residual quantiles") +
+    theme_minimal()
+
+  p1 / p2
+}
+
+# Compare multiple VCOV specs for a fixest model
+compare_fixest_vcovs <- function(mod, specs = list("iid" = "iid")) {
+  purrr::imap_dfr(specs, function(vs, nm) {
+    broom::tidy(mod, vcov = vs) |>
+      dplyr::select(term, estimate, std.error, statistic, p.value) |>
+      dplyr::mutate(vcov = nm, .before = 1)
+  })
+}
+```
+
+
+```{r Diagnostics Helpers}
+# ---- Generic weighted diagnostics helpers ----
+
+wrmse_weighted <- function(truth, pred, w) sqrt(weighted.mean((truth - pred)^2, w = w, na.rm = TRUE))
+wmae_weighted  <- function(truth, pred, w) weighted.mean(abs(truth - pred), w = w, na.rm = TRUE)
+
+# Residual diagnostics for lm with optional weights
+lm_diag_tbl <- function(mod, data = NULL) {
+  if (is.null(data)) data <- mod$model
+  tibble::tibble(
+    fitted = fitted(mod),
+    resid  = resid(mod),
+    w      = if (!is.null(mod$weights)) mod$weights else rep(1, nrow(data))
+  )
+}
+
+# Influence summary for lm
+lm_influence_tbl <- function(mod) {
+  infl <- influence.measures(mod)
+  is_inf <- apply(infl$is.inf, 1, any)
+  tibble::tibble(
+    row = seq_along(is_inf),
+    influential = is_inf
+  )
+}
+```
+
+
+#### Metagame Dynamics
+
+Phase 2 model roles for Metagame Dynamics:
+- Primary inferential models for macro ecosystem/environment outcomes:
+     `eco_hhi_wlm`, `eco_neff_wlm`, `draw_wlm`, `upset_wlm`, `moves_wlm`
+   with HAC/Newey-West inference.
+
+- Primary inferential models for opening composition over time:
+     `mn_models[[tc_bucket]]`  (multinomial)
+
+- Descriptive / sensitivity models:
+     `share_feols_models[[tc_bucket]]`
+     `gam_models[[tc_bucket]]`
+
+```{r Metagame Prep}
+# 1) Clean month + time index
+mom_tc2 <- mom_tc |>
+  filter(!is.na(opening), !is.na(tc_bucket), !is.na(month)) |>
+  mutate(
+    month_date = ymd(paste0(month, "-01")),
+    t = as.integer(dense_rank(month_date))
+  )
+
+mm_tc2 <- mm_tc |>
+  filter(!is.na(tc_bucket), !is.na(month)) |>
+  mutate(
+    month_date = ymd(paste0(month, "-01")),
+    t = as.integer(dense_rank(month_date))
+  )
+
+# 2) Ordered months and strict forward split
+months_ordered <- mom_tc2 |>
+  distinct(month, month_date, t) |>
+  arrange(month_date)
+
+n_months <- nrow(months_ordered)
+cut_idx  <- floor(0.80 * n_months)
+
+train_months <- months_ordered |> slice(1:cut_idx) |> pull(month)
+test_months  <- months_ordered |> slice((cut_idx+1):n_months) |> pull(month)
+
+stopifnot(length(intersect(train_months, test_months)) == 0)
+
+mom_train <- mom_tc2 |> filter(month %in% train_months)
+mom_test  <- mom_tc2 |> filter(month %in% test_months)
+
+mm_train  <- mm_tc2 |> filter(month %in% train_months)
+mm_test   <- mm_tc2 |> filter(month %in% test_months)
+
+# sanity
+range(mom_train$month_date); range(mom_test$month_date)
+
+# Weighted RMSE helper (used throughout)
+eval_wrmse <- function(actual, pred, w) {
+  sqrt(sum(w * (actual - pred)^2, na.rm = TRUE) / sum(w, na.rm = TRUE))
+}
+```
+```{r Phase3 Helpers}
+show_tc <- "blitz"
+plot_tc <- "blitz"
+t_name <- "t"
+
+# Compact extractor for key lm terms under HAC
+extract_hac_terms <- function(mod, model_name, terms_keep, lag = 3) {
+  tidy_hac(mod, lag = lag) |>
+    dplyr::filter(term %in% terms_keep) |>
+    dplyr::mutate(model = model_name, .before = 1)
+}
+
+# Simple sign/stability label
+sign_label <- function(x, tol = 0) {
+  dplyr::case_when(
+    is.na(x) ~ NA_character_,
+    x > tol ~ "positive",
+    x < -tol ~ "negative",
+    TRUE ~ "near_zero"
+  )
+}
+```
+
+
+```{r Metagame Ecosystem Over Time}
+# Aggregate opening shares into ecosystem metrics per month x tc_bucket
+eco <- mom_tc2 |>
+  group_by(month, month_date, t, tc_bucket) |>
+  summarise(
+    total_games = sum(games, na.rm = TRUE),
+    # concentration / diversity metrics derived from the opening share distribution
+    hhi = sum(share^2, na.rm = TRUE),                                        # Herfindahl-Hirschman
+    entropy = -sum(if_else(share > 0, share * log(share), 0), na.rm = TRUE), # Shannon entropy
+    n_eff = 1 / sum(share^2, na.rm = TRUE),                                  # effective # of openings
+    .groups = "drop"
+  )
+
+eco_train <- eco |> filter(month %in% train_months)
+eco_test  <- eco |> filter(month %in% test_months)
+
+# Weighted linear trends: ecosystem concentration differs by format and may drift over time
+eco_hhi_wlm <- lm(hhi ~ tc_bucket * t, data = eco_train, weights = total_games)
+eco_neff_wlm <- lm(n_eff ~ tc_bucket * t, data = eco_train, weights = total_games)
+
+# Out-of-sample sanity checks (month-forward)
+eco_hhi_wrmse  <- eval_wrmse(eco_test$hhi,  predict(eco_hhi_wlm,  eco_test), eco_test$total_games)
+eco_neff_wrmse <- eval_wrmse(eco_test$n_eff,predict(eco_neff_wlm, eco_test), eco_test$total_games)
+
+tibble(metric = c("HHI (concentration)", "N_eff (effective openings)"),
+       wrmse  = c(eco_hhi_wrmse, eco_neff_wrmse))
+
+ggplot(eco, aes(x = month_date, y = hhi, color = tc_bucket, group = tc_bucket)) +
+  geom_line() +
+  labs(
+    x = "Month",
+    y = "HHI concentration (higher = more concentrated opening pool)",
+    title = "Metagame ecosystem concentration over time"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        legend.position = "bottom")
+```
+
+```{r Outcome Environment Over Time}
+# These outcomes describe the 'environment' of games in each month x format.
+# (opening popularity ignores these by definition)
+draw_wlm <- lm(draw_rate ~ tc_bucket * t, data = mm_train, weights = games)
+upset_wlm <- lm(upset_rate ~ tc_bucket * t, data = mm_train, weights = games)
+moves_wlm <- lm(avg_moves ~ tc_bucket * t, data = mm_train, weights = games)
+
+draw_wrmse  <- eval_wrmse(mm_test$draw_rate,  predict(draw_wlm,  mm_test), mm_test$games)
+upset_wrmse <- eval_wrmse(mm_test$upset_rate, predict(upset_wlm, mm_test), mm_test$games)
+moves_wrmse <- eval_wrmse(mm_test$avg_moves,  predict(moves_wlm, mm_test), mm_test$games)
+
+tibble(outcome = c("draw_rate", "upset_rate", "avg_moves"),
+       wrmse   = c(draw_wrmse, upset_wrmse, moves_wrmse))
+
+mm_long <- mm_tc2 |>
+  select(month_date, tc_bucket, draw_rate, upset_rate) |>
+  pivot_longer(cols = c(draw_rate, upset_rate), names_to = "metric", values_to = "value")
+
+ggplot(mm_long, aes(x = month_date, y = value, color = tc_bucket, group = tc_bucket)) +
+  geom_line() +
+  facet_wrap(~metric, scales = "free_y") +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(
+    x = "Month",
+    y = NULL,
+    title = "Metagame outcome environment over time"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        legend.position = "bottom")
+```
+
+```{r Macro HAC Diagnostics}
+macro_mods <- list(
+  eco_hhi  = eco_hhi_wlm,
+  eco_neff = eco_neff_wlm,
+  draw     = draw_wlm,
+  upset    = upset_wlm,
+  moves    = moves_wlm
+)
+
+purrr::imap(macro_mods, ~ plot_resid_acf(.x, .y, lag.max = 12))
+```
+```{r Macro Serial Correlation Tests}
+bg_tbl <- purrr::imap_dfr(macro_mods, function(mod, nm) {
+  bg <- lmtest::bgtest(mod, order = 3)
+  tibble::tibble(
+    model = nm,
+    bg_stat = unname(bg$statistic),
+    bg_p = bg$p.value
+  )
+})
+bg_tbl
+```
+
+```{r Macro HAC Tables}
+macro_hac_compare <- purrr::imap(macro_mods, function(mod, nm) {
+  compare_lm_ses(mod, hac_lag = 3) |>
+    dplyr::mutate(model = nm, .before = 1)
+})
+
+macro_hac_compare$draw
+macro_hac_compare$eco_hhi
+
+bind_rows(macro_hac_compare) |>
+  dplyr::arrange(model, term)
+```
+
+```{r Macro HAC Lag Sensitivity}
+hac_lag_sens <- purrr::imap_dfr(macro_mods, function(mod, nm) {
+  purrr::map_dfr(c(1, 3, 6), function(L) {
+    tidy_hac(mod, lag = L) |>
+      dplyr::mutate(model = nm, hac_lag = L, .before = 1)
+  })
+})
+hac_lag_sens
+```
+
+
+
+```{r Metagame Opening-Share Descriptive Models}
+top_k <- 12
+min_games_cell <- 200
+
+top_openings_by_tc <- mom_train |>
+  group_by(tc_bucket, opening) |>
+  summarise(total_games = sum(games, na.rm = TRUE), .groups = "drop") |>
+  group_by(tc_bucket) |>
+  slice_max(order_by = total_games, n = top_k, with_ties = FALSE) |>
+  ungroup()
+
+mom_train_top <- mom_train |>
+  inner_join(top_openings_by_tc |> select(tc_bucket, opening), by = c("tc_bucket","opening")) |>
+  filter(games >= min_games_cell)
+
+mom_test_top <- mom_test |>
+  inner_join(top_openings_by_tc |> select(tc_bucket, opening), by = c("tc_bucket","opening")) |>
+  filter(games >= min_games_cell)
+
+# Descriptive / sensitivity opening-share models:
+# FEOLS gives interpretable opening-by-time trend summaries with clustered VCOV options.
+# These are no longer the primary inferential model for composition; the multinomial is primary.-
+fit_share_feols_tc <- function(tc) {
+  dat <- mom_train_top |>
+    filter(tc_bucket == tc) |>
+    mutate(
+      opening = fct_drop(factor(opening)),
+      month = factor(month)
+    )
+
+  fixest::feols(
+    share ~ opening * t,
+    data = dat,
+    weights = ~games
+  )
+}
+
+fit_gam_tc <- function(tc) {
+  dat <- mom_train_top |> filter(tc_bucket == tc) |>
+    mutate(opening = fct_drop(factor(opening)))
+  gam(
+    share ~ opening + s(t, by = opening, k = 8),
+    data = dat,
+    weights = games,
+    method = "REML"
+  )
+}
+
+tc_levels <- sort(unique(mom_train_top$tc_bucket))
+share_feols_models <- set_names(tc_levels) |> map(fit_share_feols_tc)
+gam_models <- set_names(tc_levels) |> map(fit_gam_tc)
+
+# Evaluate both on held-out months
+share_feols_eval <- imap_dfr(share_feols_models, function(mod, tc) {
+  train_levels <- mom_train_top |>
+    filter(tc_bucket == tc) |>
+    mutate(opening = fct_drop(factor(opening))) |>
+    pull(opening) |>
+    levels()
+
+  te <- mom_test_top |>
+    filter(tc_bucket == tc) |>
+    mutate(opening = factor(opening, levels = train_levels)) |>
+    filter(!is.na(opening))
+
+  pred <- predict(mod, newdata = te)
+  tibble(tc_bucket = tc, model = "FEOLS_share_descriptive", wrmse = eval_wrmse(te$share, pred, te$games))
+})
+
+gam_eval <- imap_dfr(gam_models, function(mod, tc) {
+  te <- mom_test_top |> filter(tc_bucket == tc) |>
+    mutate(opening = factor(opening, levels = levels(mod$model$opening))) |>
+    filter(!is.na(opening))
+  pred <- predict(mod, newdata = te)
+  tibble(tc_bucket = tc, model = "GAM_descriptive", wrmse = eval_wrmse(te$share, pred, te$games))
+})
+
+bind_rows(share_feols_eval, gam_eval) |> arrange(tc_bucket, model)
+
+dat_all <- mom_tc2 |>
+  inner_join(top_openings_by_tc |> filter(tc_bucket == plot_tc) |> select(tc_bucket, opening),
+             by = c("tc_bucket","opening")) |>
+  filter(tc_bucket == plot_tc, games >= min_games_cell) |>
+  mutate(
+    opening = factor(opening, levels = levels(gam_models[[plot_tc]]$model$opening)),
+    split = if_else(month %in% train_months, "train", "test")
+  ) |>
+  filter(!is.na(opening))
+
+dat_all$pred_gam <- predict(gam_models[[plot_tc]], newdata = dat_all)
+
+ggplot(dat_all, aes(x = month_date, y = share, color = opening, group = opening)) +
+  geom_point(aes(alpha = split), size = 1) +
+  geom_line(aes(y = pred_gam), linewidth = 0.8) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(
+    x = "Month",
+    y = "Opening share",
+    title = paste0("Supporting: top openings share over time with GAM fit (", plot_tc, ")"),
+    alpha = "Split"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        legend.position = "bottom")
+```
+```{r Metagame Multinomial}
+
+# 1) Aggregate counts at opening-month-tc (all openings)
+counts_long_all <- mom_tc2 |>
+  filter(!is.na(opening), !is.na(tc_bucket), !is.na(month)) |>
+  group_by(tc_bucket, month, month_date, t, opening) |>
+  summarise(games = sum(games), .groups = "drop")
+
+# 2) Tag top-k vs Other (top openings chosen from TRAIN only)
+top_tbl <- top_openings_by_tc |>
+  mutate(is_top = TRUE) |>
+  select(tc_bucket, opening, is_top)
+
+counts_long_tagged <- counts_long_all |>
+  left_join(top_tbl, by = c("tc_bucket","opening")) |>
+  mutate(opening2 = if_else(is_top %in% TRUE, opening, "Other")) |>
+  group_by(tc_bucket, month, month_date, t, opening2) |>
+  summarise(games = sum(games), .groups = "drop")
+
+# 3) Wide format: one row per (tc_bucket, month), one column per opening2
+counts_wide <- counts_long_tagged |>
+  pivot_wider(names_from = opening2, values_from = games, values_fill = 0)
+
+mn_train <- counts_wide |> filter(month %in% train_months)
+mn_test  <- counts_wide |> filter(month %in% test_months)
+
+id_cols <- c("tc_bucket","month","month_date","t")
+open_cols <- setdiff(names(mn_train), id_cols)
+
+# 4) Safe names mapping (old -> new) for dplyr::rename(new = old)
+name_map <- tibble(
+  opening = open_cols,
+  safe    = make.names(open_cols, unique = TRUE)
+)
+
+rename_vec <- setNames(name_map$opening, name_map$safe)
+
+mn_train2 <- mn_train |> rename(!!!rename_vec)
+mn_test2  <- mn_test  |> rename(!!!rename_vec)
+
+safe_open_cols <- name_map$safe
+
+# Sanity
+stopifnot(all(safe_open_cols %in% names(mn_train2)))
+stopifnot(all(safe_open_cols %in% names(mn_test2)))
+
+# 5) Fit multinomial per tc_bucket
+fit_multinom_tc <- function(tc) {
+  tr <- mn_train2 |> filter(tc_bucket == tc)
+
+  # response matrix columns (safe names)
+  Y <- tr |> select(any_of(safe_open_cols))
+  X <- tr |> select(t)
+
+  dat <- bind_cols(X, Y)
+
+  y_part <- paste0("cbind(", paste(names(Y), collapse = ","), ")")
+  fml <- as.formula(paste0(y_part, " ~ t"))
+
+  vglm(fml, family = multinomial(), data = dat)
+}
+
+mn_models <- mn_train2 |>
+  distinct(tc_bucket) |>
+  pull(tc_bucket) |>
+  set_names() |>
+  map(fit_multinom_tc)
+
+# 6) Evaluate with average per-game log loss
+mn_logloss <- function(counts, probs, eps = 1e-12) {
+  probs <- pmax(probs, eps)
+  -sum(counts * log(probs)) / sum(counts)
+}
+
+mn_eval <- imap_dfr(mn_models, function(mod, tc) {
+  te <- mn_test2 |> filter(tc_bucket == tc)
+
+  Y <- te |> select(any_of(safe_open_cols)) |> as.matrix()
+  pred <- predict(mod, newdata = te |> select(t), type = "response")
+
+  # Ensure matrices align by column name (VGAM may drop a baseline column)
+  pred <- as.matrix(pred)
+  if (!is.null(colnames(pred))) {
+    # keep only overlapping columns
+    common <- intersect(colnames(pred), colnames(Y))
+    Y_use <- Y[, common, drop = FALSE]
+    pred_use <- pred[, common, drop = FALSE]
+  } else {
+    # fallback: assume same ordering
+    Y_use <- Y
+    pred_use <- pred
+  }
+
+  probs <- pred_use / rowSums(pred_use)
+
+  row_totals <- rowSums(Y_use)
+  row_loss <- map_dbl(seq_len(nrow(Y_use)), \(i) mn_logloss(Y_use[i,], probs[i,]))
+
+  tibble(
+    tc_bucket = tc,
+    n_test_months = nrow(te),
+    avg_logloss_per_game = weighted.mean(row_loss, w = row_totals)
+  )
+})
+
+mn_eval
+```
+
+
+
+```{r Metagame Multinomial Predicted Shares}
+# Predicted composition at early vs late time for the primary multinomial model
+
+tc_show <- show_tc
+mod <- mn_models[[tc_show]]
+
+te_tc <- mn_test2 |>
+  dplyr::filter(tc_bucket == tc_show)
+
+t_min <- min(te_tc$t, na.rm = TRUE)
+t_max <- max(te_tc$t, na.rm = TRUE)
+
+newdat <- tibble::tibble(t = c(t_min, t_max))
+
+pred <- predict(mod, newdata = newdat, type = "response")
+pred <- as.data.frame(pred) |>
+  tibble::rownames_to_column("row_id") |>
+  dplyr::mutate(period = c("early_test", "late_test")) |>
+  dplyr::select(-row_id) |>
+  tidyr::pivot_longer(-period, names_to = "opening", values_to = "pred_share")
+
+pred |>
+  dplyr::group_by(period) |>
+  dplyr::arrange(period, dplyr::desc(pred_share)) |>
+  dplyr::slice_head(n = 10) |>
+  dplyr::ungroup()
+```
+
+```{r Metagame Multinomial Primary Results}
+# Phase 2: this is the primary inferential model for opening composition over time
+
+
+mn_show <- mn_models[[show_tc]]
+
+cat("Primary inferential model for opening composition\n")
+cat("Time control:", show_tc, "\n")
+
+# Coefficient table (raw parameterization; useful but not the main interpretation)
+coef_tab <- coef(summary(mn_show))
+
+mn_coef <- as.data.frame(coef_tab) |>
+  tibble::rownames_to_column("term") |>
+  dplyr::rename(
+    estimate  = Estimate,
+    std.error = `Std. Error`,
+    statistic = `z value`,
+    p.value   = `Pr(>|z|)`
+  ) |>
+  dplyr::mutate(tc_bucket = show_tc)
+
+mn_coef |>
+  dplyr::filter(stringr::str_starts(term, "t:")) |>
+  dplyr::arrange(p.value) |>
+  head(20)
+```
+
+```{r Metagame Multinomial Share Change}
+tc_show <- show_tc
+mod <- mn_models[[tc_show]]
+
+te_tc <- mn_test2 |>
+  dplyr::filter(tc_bucket == tc_show)
+
+t_min <- min(te_tc$t, na.rm = TRUE)
+t_max <- max(te_tc$t, na.rm = TRUE)
+
+newdat <- tibble::tibble(t = c(t_min, t_max))
+pred <- predict(mod, newdata = newdat, type = "response")
+pred <- as.data.frame(pred)
+
+common_cols <- colnames(pred)
+
+share_change <- tibble::tibble(
+  opening = common_cols,
+  pred_early = as.numeric(pred[1, common_cols]),
+  pred_late  = as.numeric(pred[2, common_cols])
+) |>
+  dplyr::mutate(change = pred_late - pred_early) |>
+  dplyr::arrange(dplyr::desc(abs(change)))
+
+share_change |> head(15)
+```
+
+
+```{r Metagame Writeup Helpers}
+
+# Robust SE helper for lm objects
+tidy_robust <- function(mod, type = "HC1") {
+  ct <- lmtest::coeftest(mod, vcov. = sandwich::vcovHC(mod, type = type))
+  broom::tidy(ct) |>
+    rename(estimate = estimate, std.error = std.error, statistic = statistic, p.value = p.value)
+}
+
+# Simple formula->string helper (for reporting)
+fmt_formula <- function(mod) {
+  paste(deparse(formula(mod)), collapse = " ")
+}
+
+# Make a "fully written out" linear model equation string (long, but paper-ready)
+# NOTE: this writes out an equation for the baseline opening + adjustments.
+lm_equation_string <- function(mod, opening_var = "opening", time_var = "t", digits = 4) {
+  b <- coef(mod)
+  terms <- names(b)
+
+  # Separate intercept, main effects, time, and interactions
+  b0 <- b["(Intercept)"]
+  b_t <- if (time_var %in% terms) b[time_var] else 0
+
+  # Opening main effects: openingX
+  op_main <- b[grepl(paste0("^", opening_var), terms) & !grepl(":", terms)]
+  # Interactions: openingX:time
+  op_int  <- b[grepl(paste0("^", opening_var), terms) & grepl(paste0(":", time_var, "$"), terms)]
+
+  # Build
+  lines <- c()
+  lines <- c(lines, sprintf("\\hat{y} = %.4f %s %.4f\\,%s", 
+                            round(b0, digits),
+                            ifelse(b_t >= 0, "+", "-"),
+                            abs(round(b_t, digits)),
+                            time_var))
+
+  if (length(op_main) > 0) {
+    for (nm in names(op_main)) {
+      # nm like openingPhilidor Defense
+      op <- sub(paste0("^", opening_var), "", nm)
+      val <- op_main[nm]
+      lines <- c(lines, sprintf("\\; %s\\; %.4f\\,\\mathbb{1}[%s=%s]", 
+                                ifelse(val >= 0, "+", "-"),
+                                abs(round(val, digits)),
+                                opening_var,
+                                gsub("'", "\\\\'", op)))
+    }
+  }
+
+  if (length(op_int) > 0) {
+    for (nm in names(op_int)) {
+      # nm like openingPhilidor Defense:t
+      op <- sub(paste0("^", opening_var), "", sub(paste0(":", time_var, "$"), "", nm))
+      val <- op_int[nm]
+      lines <- c(lines, sprintf("\\; %s\\; %.4f\\,%s\\cdot\\mathbb{1}[%s=%s]", 
+                                ifelse(val >= 0, "+", "-"),
+                                abs(round(val, digits)),
+                                time_var,
+                                opening_var,
+                                gsub("'", "\\\\'", op)))
+    }
+  }
+
+  paste0("$", paste(lines, collapse = " "), "$")
+}
+```
+
+```{r Metagame Opening-Share Descriptive Writeup}
+wlm_show <- share_feols_models[[show_tc]]
+
+cat("FEOLS descriptive opening-share model — example\n")
+cat("Time control:", show_tc, "\n")
+cat("Formula:", fmt_formula(wlm_show), "\n\n")
+
+# Standard summary table
+wlm_sum <- broom::tidy(wlm_show) |>
+  arrange(desc(abs(estimate)))
+
+# Phase 1 primary inference: clustered SEs
+wlm_cluster_month <- broom::tidy(wlm_show, vcov = ~month) |>
+  arrange(desc(abs(estimate)))
+
+wlm_cluster_twoway <- broom::tidy(wlm_show, vcov = ~month + opening) |>
+  arrange(desc(abs(estimate)))
+
+wlm_fit_stats <- tibble::tibble(
+  stat = c("n", "r2", "wr2"),
+  value = as.numeric(fixest::fitstat(wlm_show, c("n", "r2", "wr2")))
+)
+
+wlm_fit_stats
+wlm_cluster_month |> head(25)
+wlm_cluster_twoway |> head(25)
+
+summary(wlm_show)
+```
+
+```{r Metagame Opening-Share GAM Sensitivity}
+gam_show <- gam_models[[show_tc]]
+
+cat("GAM sensitivity model for opening-share nonlinearity — example\n")
+cat("Time control:", show_tc, "\n")
+cat("Formula:", fmt_formula(gam_show), "\n\n")
+
+# Parametric part (opening intercept shifts)
+gam_param <- broom::tidy(gam_show, parametric = TRUE)
+
+# Smooth part (opening-specific smooths)
+gam_smooth <- broom::tidy(gam_show, parametric = FALSE)
+
+# Fit stats
+gam_fit_stats <- broom::glance(gam_show)
+
+gam_fit_stats
+gam_param |> arrange(p.value) |> head(20)
+gam_smooth |> arrange(p.value) |> head(20)
+
+# If you want the standard mgcv printout too:
+summary(gam_show)
+```
+
+```{r Metagame Macro Primary Writeup}
+macro_show <- draw_wlm   # or upset_wlm, moves_wlm
+
+cat("Primary macro inferential model (HAC inference)\n")
+cat("Outcome:", all.vars(formula(macro_show))[1], "\n")
+cat("Formula:", fmt_formula(macro_show), "\n\n")
+
+macro_hac <- tidy_hac(macro_show, lag = 3)
+macro_stats <- broom::glance(macro_show)
+
+macro_stats
+macro_hac
+```
+
+```{r Metagame Tables All Models}
+# Descriptive / sensitivity FEOLS share coefficients for all tc_buckets
+share_coef_all_month <- imap_dfr(share_feols_models, function(mod, tc) {
+  broom::tidy(mod, vcov = ~month) |>
+    mutate(tc_bucket = tc)
+})
+
+share_coef_all_twoway <- imap_dfr(share_feols_models, function(mod, tc) {
+  broom::tidy(mod, vcov = ~month + opening) |>
+    mutate(tc_bucket = tc)
+})
+
+# GAM parametric + smooth for all tc_buckets
+gam_param_all <- imap_dfr(gam_models, function(mod, tc) {
+  broom::tidy(mod, parametric = TRUE) |> mutate(tc_bucket = tc)
+})
+gam_smooth_all <- imap_dfr(gam_models, function(mod, tc) {
+  broom::tidy(mod, parametric = FALSE) |> mutate(tc_bucket = tc)
+})
+
+# Primary macro inferential models with HAC
+macro_coef_all <- bind_rows(
+  tidy_hac(draw_wlm, lag = 3)  |> mutate(outcome = "draw_rate"),
+  tidy_hac(upset_wlm, lag = 3) |> mutate(outcome = "upset_rate"),
+  tidy_hac(moves_wlm, lag = 3) |> mutate(outcome = "avg_moves")
+)
+
+share_coef_all_month |> arrange(tc_bucket, p.value) |> head(15)
+share_coef_all_twoway |> arrange(tc_bucket, p.value) |> head(15)
+gam_param_all |> arrange(tc_bucket, p.value) |> head(15)
+gam_smooth_all |> arrange(tc_bucket, p.value) |> head(15)
+macro_coef_all |> arrange(outcome, p.value)
+
+mn_slopes_all <- imap_dfr(mn_models, function(mod, tc) {
+  coef_tab <- as.data.frame(coef(summary(mod))) |>
+    tibble::rownames_to_column("term") |>
+    dplyr::rename(
+      estimate  = Estimate,
+      std.error = `Std. Error`,
+      statistic = `z value`,
+      p.value   = `Pr(>|z|)`
+    ) |>
+    dplyr::mutate(tc_bucket = tc)
+
+  coef_tab |>
+    dplyr::filter(stringr::str_starts(term, "t:"))
+})
+
+mn_slopes_all |> arrange(tc_bucket, p.value) |> head(20)
+```
+
+```{r Metagame Multinomial Tidy}
+mn_show <- mn_models[[show_tc]]
+
+# VGAM provides a coefficient table via coef(summary())
+# This table already contains Estimate / Std. Error / z value / Pr(>|z|)
+coef_tab <- coef(summary(mn_show))
+
+mn_coef <- as.data.frame(coef_tab) |>
+  tibble::rownames_to_column("term") |>
+  dplyr::rename(
+    estimate  = Estimate,
+    std.error = `Std. Error`,
+    statistic = `z value`,
+    p.value   = `Pr(>|z|)`
+  ) |>
+  dplyr::mutate(
+    tc_bucket = show_tc
+  )
+
+# Preview (top 30 by smallest p-value)
+mn_coef |>
+  dplyr::arrange(p.value) |>
+  dplyr::select(tc_bucket, term, estimate, std.error, statistic, p.value) |>
+  head(30)
+```
+
+```{r Metagame Multinomial Matrices}
+mn_show <- mn_models[[show_tc]]
+
+B <- VGAM::coefvlm(mn_show, matrix = TRUE)  # coefficients
+V <- vcov(mn_show)
+
+# Build SEs from vcov; VGAM stores parameters stacked, but coef(summary()) is easiest for SEs
+coef_tab <- coef(summary(mn_show))
+se_vec <- coef_tab[, "Std. Error"]
+names(se_vec) <- rownames(coef_tab)
+
+# Convert the stacked SEs to a (predictor x category) matrix with same dimnames as B
+# The coef(summary()) rownames usually look like "(Intercept):1", "t:1", ...
+make_se_matrix <- function(B, se_vec) {
+  out <- B * NA_real_
+  for (r in rownames(B)) {
+    for (c in colnames(B)) {
+      nm <- paste0(r, ":", c)
+      if (nm %in% names(se_vec)) out[r, c] <- se_vec[nm]
+    }
+  }
+  out
+}
+
+SE <- make_se_matrix(B, se_vec)
+
+B
+SE
+```
+```{r Metagame Multinomial Slopes Only}
+mn_show <- mn_models[[show_tc]]
+
+coef_tab <- coef(summary(mn_show))
+
+mn_coef <- as.data.frame(coef_tab) |>
+  tibble::rownames_to_column("term") |>
+  dplyr::rename(
+    estimate  = Estimate,
+    std.error = `Std. Error`,
+    statistic = `z value`,
+    p.value   = `Pr(>|z|)`
+  )
+
+mn_slopes <- mn_coef |>
+  dplyr::filter(stringr::str_starts(term, "t:")) |>
+  dplyr::arrange(p.value)
+
+mn_slopes |> head(20)
+```
+
+##### Diagnostics
+
+```{r Metagame Macro WLM Diagnostics}
+macro_mods <- list(
+  eco_hhi  = eco_hhi_wlm,
+  eco_neff = eco_neff_wlm,
+  draw     = draw_wlm,
+  upset    = upset_wlm,
+  moves    = moves_wlm
+)
+
+# 1) Residual vs fitted + QQ (keep these)
+plot_lm_basic(eco_hhi_wlm,  "eco_hhi_wlm")
+plot_lm_basic(draw_wlm,     "draw_wlm")
+
+# 2) Add residual autocorrelation checks
+plot_resid_acf(eco_hhi_wlm, "eco_hhi_wlm", lag.max = 12)
+plot_resid_acf(draw_wlm,    "draw_wlm",    lag.max = 12)
+
+# 3) Heteroskedasticity and serial-correlation diagnostics
+bp_tbl <- purrr::imap_dfr(macro_mods, function(mod, nm) {
+  bp <- lmtest::bptest(mod)
+  tibble::tibble(
+    model = nm,
+    bp_stat = unname(bp$statistic),
+    bp_p = bp$p.value
+  )
+})
+bp_tbl
+
+bg_tbl <- purrr::imap_dfr(macro_mods, function(mod, nm) {
+  bg <- lmtest::bgtest(mod, order = 3)
+  tibble::tibble(
+    model = nm,
+    bg_stat = unname(bg$statistic),
+    bg_p = bg$p.value
+  )
+})
+bg_tbl
+
+# 4) Compare classical vs HC1 vs HAC SEs
+macro_hac_compare <- purrr::imap(macro_mods, function(mod, nm) {
+  compare_lm_ses(mod, hac_lag = 3) |>
+    dplyr::mutate(model = nm, .before = 1)
+})
+
+bind_rows(macro_hac_compare) |>
+  dplyr::arrange(model, term)
+
+# 5) Influence: keep this
+infl_tbl <- purrr::imap_dfr(macro_mods, function(mod, nm) {
+  inf <- lm_influence_tbl(mod)
+  tibble::tibble(
+    model = nm,
+    n = nrow(inf),
+    n_influential = sum(inf$influential)
+  )
+})
+infl_tbl
+```
+
+```{r Metagame Share WLM Diagnostics}
+# Diagnostics per tc_bucket for FEOLS share models
+share_diag <- purrr::imap_dfr(share_feols_models, function(mod, tc) {
+  tibble::tibble(
+    tc_bucket = tc,
+    n = nobs(mod),
+    r2 = as.numeric(fixest::fitstat(mod, "r2"))
+  )
+})
+share_diag
+
+# Visual diagnostics for one bucket
+tc_show <- show_tc
+
+share_diag_df <- tibble::tibble(
+  fitted = fitted(share_feols_models[[tc_show]]),
+  resid  = resid(share_feols_models[[tc_show]])
+)
+
+ggplot(share_diag_df, aes(x = fitted, y = resid)) +
+  geom_point(alpha = 0.35) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = paste0("FEOLS share (", tc_show, ") — Residuals vs Fitted"),
+       x = "Fitted", y = "Residual") +
+  theme_minimal()
+
+ggplot(share_diag_df, aes(sample = resid)) +
+  stat_qq(alpha = 0.35) +
+  stat_qq_line() +
+  labs(title = paste0("FEOLS share (", tc_show, ") — QQ plot")) +
+  theme_minimal()
+
+# Phase 1 key comparison: clustered SEs
+compare_fixest_vcovs(
+  share_feols_models[[tc_show]],
+  specs = list(
+    iid = "iid",
+    HC1 = "hetero",
+    month_cluster = ~month,
+    opening_cluster = ~opening,
+    two_way = ~month + opening
+  )
+) |>
+  dplyr::filter(stringr::str_detect(term, ":t$") | term == "t") |>
+  dplyr::arrange(term, vcov)
+```
+
+```{r Metagame Share GAM Diagnostics}
+# GAM diagnostics: k-index check, concurvity, residual patterns
+tc_show <- show_tc
+g <- gam_models[[tc_show]]
+
+# 1) mgcv checks (prints k-index and residual diagnostics)
+# If you see "k-index < 1" with small p-values, consider increasing k (or simplifying).
+mgcv::gam.check(g)
+
+# 2) Concurvity (nonlinear collinearity) – high values can indicate unstable smooths
+mgcv::concurvity(g, full = TRUE)
+
+# 3) Residuals vs fitted + QQ for GAM
+gdf <- tibble::tibble(fitted = fitted(g), resid = residuals(g))
+ggplot(gdf, aes(fitted, resid)) +
+  geom_point(alpha = 0.35) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = paste0("GAM share (", tc_show, ") — Residuals vs Fitted"),
+       x = "Fitted", y = "Residual") +
+  theme_minimal()
+
+ggplot(gdf, aes(sample = resid)) +
+  stat_qq(alpha = 0.35) +
+  stat_qq_line() +
+  labs(title = paste0("GAM share (", tc_show, ") — QQ plot")) +
+  theme_minimal()
+```
+```{r Metagame Multinomial Diagnostics}
+# Diagnostic focus: category support, calibration-by-month, sensitivity to min_games_cell / top_k
+
+# 1) Category support (train): any near-zero categories after top_k+Other?
+mn_support <- mn_train2 |>
+  dplyr::select(tc_bucket, all_of(safe_open_cols)) |>
+  dplyr::group_by(tc_bucket) |>
+  dplyr::summarise(dplyr::across(all_of(safe_open_cols), sum), .groups = "drop") |>
+  tidyr::pivot_longer(-tc_bucket, names_to = "cat", values_to = "total") |>
+  dplyr::group_by(tc_bucket) |>
+  dplyr::arrange(total) |>
+  dplyr::slice_head(n = 5) |>
+  dplyr::ungroup()
+mn_support
+
+# 2) Calibration-by-month: observed vs predicted share error magnitude in test months
+tc_show <- show_tc
+mod <- mn_models[[tc_show]]
+te  <- mn_test2 |> dplyr::filter(tc_bucket == tc_show)
+
+Y <- te |> dplyr::select(all_of(safe_open_cols)) |> as.matrix()
+obs_share <- Y / rowSums(Y)
+
+pred_counts <- predict(mod, newdata = te |> dplyr::select(t), type = "response")
+pred_counts <- as.matrix(pred_counts)
+
+# align overlapping categories
+common <- intersect(colnames(pred_counts), colnames(Y))
+obs_use <- obs_share[, common, drop = FALSE]
+pred_use <- pred_counts[, common, drop = FALSE]
+pred_share <- pred_use / rowSums(pred_use)
+
+# Mean absolute share error per month (weights = total games that month)
+month_err <- tibble::tibble(
+  month = te$month,
+  tot = rowSums(Y[, common, drop = FALSE]),
+  mae = rowMeans(abs(obs_use - pred_share))
+) |>
+  dplyr::group_by(month) |>
+  dplyr::summarise(
+    w_mae = weighted.mean(mae, w = tot),
+    .groups = "drop"
+  )
+
+month_err
+
+ggplot(month_err, aes(x = month, y = w_mae)) +
+  geom_line(aes(group = 1)) +
+  geom_point() +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.01)) +
+  labs(
+    title = paste0("Metagame multinomial — weighted MAE in share by month (", tc_show, ")"),
+    x = "Month (test)",
+    y = "Weighted mean |obs - pred| share"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+`opening_cluster` result sare not usable for inference; inferential comparison should rely on `month_cluster` and `two_way`.
+
+##### Summary
+
+```{r Metagame Macro Phase3 Time Shape Check}
+fit_macro_gam_time <- function(data, y, w_col) {
+  data <- data |>
+    dplyr::mutate(tc_bucket = factor(tc_bucket))
+
+  fml <- as.formula(
+    paste0(y, " ~ tc_bucket + s(t, k = 6) + s(t, by = tc_bucket, k = 6)")
+  )
+
+  mgcv::gam(
+    fml,
+    data = data,
+    weights = data[[w_col]],
+    method = "REML"
+  )
+}
+
+macro_primary <- list(
+  eco_hhi  = list(train = eco_train, y = "hhi",        w = "total_games", lm = eco_hhi_wlm),
+  eco_neff = list(train = eco_train, y = "n_eff",      w = "total_games", lm = eco_neff_wlm),
+  draw     = list(train = mm_train,  y = "draw_rate",  w = "games",       lm = draw_wlm),
+  upset    = list(train = mm_train,  y = "upset_rate", w = "games",       lm = upset_wlm),
+  moves    = list(train = mm_train,  y = "avg_moves",  w = "games",       lm = moves_wlm)
+)
+
+macro_time_shape_tbl <- purrr::imap_dfr(macro_primary, function(obj, nm) {
+  g <- fit_macro_gam_time(obj$train, obj$y, obj$w)
+
+  # compare fitted values at first and last observed month by tc_bucket
+  t_min <- min(obj$train$t, na.rm = TRUE)
+  t_max <- max(obj$train$t, na.rm = TRUE)
+
+  newdat <- tidyr::crossing(
+    t = c(t_min, t_max),
+    tc_bucket = sort(unique(obj$train$tc_bucket))
+  ) |>
+    dplyr::mutate(tc_bucket = factor(tc_bucket, levels = levels(factor(obj$train$tc_bucket))))
+
+  pred_lm <- predict(obj$lm, newdata = newdat)
+  pred_gam <- predict(g, newdata = newdat)
+
+  out <- newdat |>
+    dplyr::mutate(
+      model = "linear",
+      pred = pred_lm
+    ) |>
+    dplyr::bind_rows(
+      newdat |>
+        dplyr::mutate(
+          model = "flexible",
+          pred = pred_gam
+        )
+    ) |>
+    dplyr::mutate(period = dplyr::if_else(t == t_min, "early", "late")) |>
+    dplyr::select(-t) |>
+    tidyr::pivot_wider(names_from = period, values_from = pred) |>
+    dplyr::mutate(change = late - early, outcome = nm, .before = 1)
+
+  out
+})
+
+macro_time_shape_tbl |>
+  dplyr::arrange(outcome, tc_bucket, model)
+```
+
+```{r Metagame Macro Phase3 Claim Summary}
+macro_claims <- bind_rows(
+  extract_hac_terms(eco_hhi_wlm,  "eco_hhi",  c("t", "tc_bucketclassical:t", "tc_bucketrapid:t")),
+  extract_hac_terms(eco_neff_wlm, "eco_neff", c("t", "tc_bucketclassical:t", "tc_bucketrapid:t")),
+  extract_hac_terms(draw_wlm,     "draw",     c("t", "tc_bucketclassical:t", "tc_bucketrapid:t")),
+  extract_hac_terms(upset_wlm,    "upset",    c("t", "tc_bucketclassical:t", "tc_bucketrapid:t")),
+  extract_hac_terms(moves_wlm,    "moves",    c("t", "tc_bucketclassical:t", "tc_bucketrapid:t"))
+) |>
+  dplyr::mutate(
+    sign = sign_label(estimate),
+    survives_5pct = p.value < 0.05
+  ) |>
+  dplyr::arrange(model, term)
+
+macro_claims
+```
+
+```{r Metagame Multinomial Phase3 TopK Robustness}
+phase3_top_k <- c(8, 12, 16)
+phase3_min_games <- c(100, 200, 500)
+
+fit_mn_spec <- function(top_k_val, min_games_val, tc_show = "blitz") {
+  # top-k openings from TRAIN only
+  top_tbl_spec <- mom_train |>
+    dplyr::group_by(tc_bucket, opening) |>
+    dplyr::summarise(total_games = sum(games, na.rm = TRUE), .groups = "drop") |>
+    dplyr::group_by(tc_bucket) |>
+    dplyr::slice_max(order_by = total_games, n = top_k_val, with_ties = FALSE) |>
+    dplyr::ungroup()
+
+  # apply top-k tagging
+  counts_long_all_spec <- mom_tc2 |>
+    dplyr::filter(!is.na(opening), !is.na(tc_bucket), !is.na(month)) |>
+    dplyr::group_by(tc_bucket, month, month_date, t, opening) |>
+    dplyr::summarise(games = sum(games), .groups = "drop") |>
+    dplyr::left_join(
+      top_tbl_spec |>
+        dplyr::mutate(is_top = TRUE) |>
+        dplyr::select(tc_bucket, opening, is_top),
+      by = c("tc_bucket", "opening")
+    ) |>
+    dplyr::mutate(opening2 = dplyr::if_else(is_top %in% TRUE, opening, "Other")) |>
+    dplyr::group_by(tc_bucket, month, month_date, t, opening2) |>
+    dplyr::summarise(games = sum(games), .groups = "drop")
+
+  counts_wide_spec <- counts_long_all_spec |>
+    tidyr::pivot_wider(names_from = opening2, values_from = games, values_fill = 0)
+
+  mn_train_spec <- counts_wide_spec |>
+    dplyr::filter(month %in% train_months, tc_bucket == tc_show)
+
+  mn_test_spec <- counts_wide_spec |>
+    dplyr::filter(month %in% test_months, tc_bucket == tc_show)
+
+  id_cols <- c("tc_bucket", "month", "month_date", "t")
+  open_cols <- setdiff(names(mn_train_spec), id_cols)
+
+  if (length(open_cols) < 3 || nrow(mn_train_spec) == 0 || nrow(mn_test_spec) == 0) {
+    return(tibble::tibble(
+      n_categories_train = NA_integer_,
+      avg_logloss_per_game = NA_real_,
+      top_mover_1 = NA_character_,
+      top_mover_1_change = NA_real_,
+      top_mover_2 = NA_character_,
+      top_mover_2_change = NA_real_
+    ))
+  }
+
+  # safe names
+  name_map_spec <- tibble::tibble(
+    opening = open_cols,
+    safe = make.names(open_cols, unique = TRUE)
+  )
+  rename_vec_spec <- setNames(name_map_spec$opening, name_map_spec$safe)
+
+  mn_train2_spec <- mn_train_spec |> dplyr::rename(!!!rename_vec_spec)
+  mn_test2_spec  <- mn_test_spec  |> dplyr::rename(!!!rename_vec_spec)
+
+  safe_open_cols_spec <- name_map_spec$safe
+
+  # drop train categories with zero total count
+  train_totals <- mn_train2_spec |>
+    dplyr::summarise(dplyr::across(dplyr::all_of(safe_open_cols_spec), sum, na.rm = TRUE))
+
+  keep_cols <- names(train_totals)[as.numeric(train_totals[1, ]) > 0]
+
+  if (length(keep_cols) < 2) {
+    return(tibble::tibble(
+      n_categories_train = length(keep_cols),
+      avg_logloss_per_game = NA_real_,
+      top_mover_1 = NA_character_,
+      top_mover_1_change = NA_real_,
+      top_mover_2 = NA_character_,
+      top_mover_2_change = NA_real_
+    ))
+  }
+
+  fml <- as.formula(
+    paste0("cbind(", paste(keep_cols, collapse = ","), ") ~ t")
+  )
+
+  mod <- VGAM::vglm(fml, family = VGAM::multinomial(), data = mn_train2_spec)
+
+  pred <- predict(mod, newdata = mn_test2_spec |> dplyr::select(t), type = "response")
+  pred <- as.matrix(pred)
+
+  Y <- mn_test2_spec |> dplyr::select(dplyr::any_of(keep_cols)) |> as.matrix()
+
+  common <- intersect(colnames(pred), colnames(Y))
+  if (length(common) < 2) {
+    return(tibble::tibble(
+      n_categories_train = length(keep_cols),
+      avg_logloss_per_game = NA_real_,
+      top_mover_1 = NA_character_,
+      top_mover_1_change = NA_real_,
+      top_mover_2 = NA_character_,
+      top_mover_2_change = NA_real_
+    ))
+  }
+
+  Y_use <- Y[, common, drop = FALSE]
+  pred_use <- pred[, common, drop = FALSE]
+  probs <- pred_use / rowSums(pred_use)
+
+  row_loss <- purrr::map_dbl(seq_len(nrow(Y_use)), \(i) mn_logloss(Y_use[i, ], probs[i, ]))
+
+  # early vs late predicted change
+  t_min <- min(mn_test2_spec$t, na.rm = TRUE)
+  t_max <- max(mn_test2_spec$t, na.rm = TRUE)
+
+  pred_2 <- predict(
+    mod,
+    newdata = tibble::tibble(t = c(t_min, t_max)),
+    type = "response"
+  ) |>
+    as.data.frame()
+
+  share_change <- tibble::tibble(
+    opening_safe = colnames(pred_2),
+    pred_early = as.numeric(pred_2[1, ]),
+    pred_late  = as.numeric(pred_2[2, ]),
+    change = pred_late - pred_early
+  ) |>
+    dplyr::left_join(
+      name_map_spec |>
+        dplyr::rename(opening_safe = safe, opening = opening),
+      by = "opening_safe"
+    ) |>
+    dplyr::mutate(opening = dplyr::coalesce(opening, opening_safe)) |>
+    dplyr::arrange(dplyr::desc(abs(change)))
+
+  tibble::tibble(
+    n_categories_train = length(keep_cols),
+    avg_logloss_per_game = weighted.mean(row_loss, w = rowSums(Y_use)),
+    top_mover_1 = share_change$opening[1],
+    top_mover_1_change = share_change$change[1],
+    top_mover_2 = share_change$opening[2],
+    top_mover_2_change = share_change$change[2]
+  )
+}
+
+mn_phase3_thresh <- tidyr::crossing(
+  top_k = phase3_top_k,
+  min_games_cell = phase3_min_games
+) |>
+  dplyr::mutate(
+    out = purrr::map2(top_k, min_games_cell, ~ fit_mn_spec(.x, .y, tc_show = "blitz"))
+  ) |>
+  tidyr::unnest(out)
+
+mn_phase3_thresh
+```
+
+```{r Metagame Composition Agreement Summary}
+# Compare multinomial top movers with FEOLS directional slopes for the same tc_bucket
+tc_show <- show_tc
+
+mn_change_tbl <- share_change |>
+  dplyr::rename(opening_safe = opening)
+
+safe_to_orig <- name_map |>
+  dplyr::rename(opening_safe = safe, opening = opening)
+
+mn_change_tbl2 <- mn_change_tbl |>
+  dplyr::left_join(safe_to_orig, by = "opening_safe") |>
+  dplyr::mutate(opening = dplyr::coalesce(opening, opening_safe))
+
+feols_dir_tbl <- broom::tidy(share_feols_models[[tc_show]], vcov = ~month + opening) |>
+  dplyr::filter(stringr::str_detect(term, ":t$") | term == "t") |>
+  dplyr::mutate(
+    opening = dplyr::if_else(term == "t", "(baseline)", stringr::str_remove(term, "^opening") |> stringr::str_remove(":t$")),
+    feols_sign = sign_label(estimate)
+  ) |>
+  dplyr::select(opening, feols_estimate = estimate, feols_sign, feols_p = p.value)
+
+mn_change_tbl2 |>
+  dplyr::mutate(mn_sign = sign_label(change)) |>
+  dplyr::select(opening, mn_change = change, mn_sign) |>
+  dplyr::left_join(feols_dir_tbl, by = "opening") |>
+  dplyr::arrange(dplyr::desc(abs(mn_change))) |>
+  head(15)
+```
+
+
+#### Opening Popularity
+
+ Phase 2 model roles for Opening Popularity:
+- Primary inferential model:
+     `mn_pooled`  (pooled multinomial opening-choice model)
+
+- Sensitivity / descriptive models:
+     `nb_fits`   (per-opening NegBin with exposure)
+     `wls_fits`  (per-opening weighted share regressions)
+
+```{r Opening Popularity Prep}
+# ---- Settings ----
+top_k <- 12
+rating_bin_width <- 200   # keep consistent with EDA
+min_bin_total <- 2000     # drop sparse rating_bin x month x tc cells
+
+# ---- Base table ----
+pom2 <- pom_tc |>
+  dplyr::filter(
+    !is.na(opening), !is.na(tc_bucket), !is.na(month),
+    !is.na(avg_rating), !is.na(games)
+  ) |>
+  dplyr::mutate(
+    month_date = lubridate::ymd(paste0(month, "-01")),
+    t = as.integer(dplyr::dense_rank(month_date)),
+    rating_bin = as.integer(floor(avg_rating / rating_bin_width) * rating_bin_width)
+  )
+
+# ---- Month-forward split (80/20) ----
+months_ordered <- pom2 |>
+  dplyr::distinct(month, month_date, t) |>
+  dplyr::arrange(month_date)
+
+cut_idx <- floor(0.80 * nrow(months_ordered))
+train_months <- months_ordered |> dplyr::slice(1:cut_idx) |> dplyr::pull(month)
+test_months  <- months_ordered |> dplyr::slice((cut_idx + 1):nrow(months_ordered)) |> dplyr::pull(month)
+
+stopifnot(length(intersect(train_months, test_months)) == 0)
+
+pom_train <- pom2 |> dplyr::filter(month %in% train_months)
+pom_test  <- pom2 |> dplyr::filter(month %in% test_months)
+
+# ---- Choose Top-K openings POOLED from TRAIN only (across all TCs) ----
+top_openings_pooled <- pom_train |>
+  dplyr::group_by(opening) |>
+  dplyr::summarise(total_games = sum(games, na.rm = TRUE), .groups = "drop") |>
+  dplyr::slice_max(total_games, n = top_k, with_ties = FALSE)
+
+top_tbl <- top_openings_pooled |>
+  dplyr::mutate(is_top = TRUE) |>
+  dplyr::select(opening, is_top)
+
+# ---- Aggregate to adoption counts at (month, tc_bucket, rating_bin, opening2) ----
+counts_long <- pom2 |>
+  dplyr::left_join(top_tbl, by = "opening") |>
+  dplyr::mutate(opening2 = dplyr::if_else(is_top %in% TRUE, opening, "Other")) |>
+  dplyr::group_by(month, month_date, t, tc_bucket, rating_bin, opening2) |>
+  dplyr::summarise(games = sum(games, na.rm = TRUE), .groups = "drop")
+
+# Total games per (month, tc_bucket, rating_bin) + reliability filter
+bin_totals <- counts_long |>
+  dplyr::group_by(month, month_date, t, tc_bucket, rating_bin) |>
+  dplyr::summarise(bin_total = sum(games, na.rm = TRUE), .groups = "drop") |>
+  dplyr::filter(bin_total >= min_bin_total)
+
+counts_long <- counts_long |>
+  dplyr::inner_join(bin_totals, by = c("month","month_date","t","tc_bucket","rating_bin"))
+
+# ---- Wide response for multinomial ----
+counts_wide <- counts_long |>
+  tidyr::pivot_wider(names_from = opening2, values_from = games, values_fill = 0)
+
+train_wide <- counts_wide |> dplyr::filter(month %in% train_months)
+test_wide  <- counts_wide |> dplyr::filter(month %in% test_months)
+
+id_cols <- c("month","month_date","t","tc_bucket","rating_bin","bin_total")
+resp_cols <- setdiff(names(train_wide), id_cols)
+
+# ---- Force "Other" to be the baseline by making it the LAST response column ----
+# (VGAM uses the last response category as the reference group by default)
+if ("Other" %in% resp_cols) {
+  resp_cols <- c(setdiff(resp_cols, "Other"), "Other")
+}
+train_wide <- train_wide |> dplyr::select(all_of(id_cols), all_of(resp_cols))
+test_wide  <- test_wide  |> dplyr::select(all_of(id_cols), all_of(resp_cols))
+
+# ---- Make response names syntactic for VGAM, and keep a mapping for writeup ----
+resp_cols_safe <- make.names(resp_cols, unique = TRUE)
+
+train_mn <- train_wide |> dplyr::rename_with(~ make.names(.x, unique = TRUE), all_of(resp_cols))
+test_mn  <- test_wide  |> dplyr::rename_with(~ make.names(.x, unique = TRUE), all_of(resp_cols))
+
+name_map <- tibble::tibble(
+  opening      = resp_cols,
+  opening_safe = resp_cols_safe
+)
+
+# ---- Force integer counts explicitly (removes VGAM ycounts warning) ----
+train_mn <- train_mn |>
+  dplyr::mutate(dplyr::across(all_of(resp_cols_safe), ~ as.integer(round(.x))))
+test_mn  <- test_mn  |>
+  dplyr::mutate(dplyr::across(all_of(resp_cols_safe), ~ as.integer(round(.x))))
+
+# ---- Helper: per-game multinomial log loss ----
+mn_logloss <- function(counts, probs, eps = 1e-12) {
+  probs <- pmax(probs, eps)
+  -sum(counts * log(probs)) / sum(counts)
+}
+
+# ---- Metadata you may want later for paper/results ----
+op_meta <- list(
+  top_k = top_k,
+  rating_bin_width = rating_bin_width,
+  min_bin_total = min_bin_total,
+  train_months = train_months,
+  test_months = test_months,
+  openings_top = top_openings_pooled
+)
+
+# ---- Sanity checks ----
+
+# 1) Any response categories basically absent in a TC? (can cause instability)
+train_mn |>
+  dplyr::select(tc_bucket, all_of(resp_cols_safe)) |>
+  dplyr::group_by(tc_bucket) |>
+  dplyr::summarise(dplyr::across(all_of(resp_cols_safe), sum), .groups = "drop") |>
+  tidyr::pivot_longer(-tc_bucket, names_to = "cat", values_to = "total") |>
+  dplyr::group_by(cat) |>
+  dplyr::summarise(min_total = min(total), .groups = "drop") |>
+  dplyr::arrange(min_total) |>
+  head(10)
+
+# 2) Is "Other" dominating the simplex? (fine, but good to know)
+train_mn |>
+  dplyr::transmute(other_share = .data$Other / rowSums(dplyr::across(all_of(resp_cols_safe)))) |>
+  dplyr::summarise(
+    mean_other = mean(other_share, na.rm = TRUE),
+    p90_other  = as.numeric(stats::quantile(other_share, 0.9, na.rm = TRUE))
+  )
+```
+
+```{r Opening Popularity Phase3 Helper}
+mn_time_change_tbl_fullspan <- function(mod, data, rating_ref = NULL) {
+  if (is.null(rating_ref)) rating_ref <- median(data$rating_bin, na.rm = TRUE)
+
+  t_early <- min(data$t, na.rm = TRUE)
+  t_late  <- max(data$t, na.rm = TRUE)
+
+  newdat <- tidyr::crossing(
+    rating_bin = rating_ref,
+    tc_bucket = sort(unique(data$tc_bucket)),
+    t = c(t_early, t_late)
+  ) |>
+    dplyr::mutate(period = dplyr::if_else(t == t_early, "early", "late"))
+
+  pred_long <- predict_mn_long(
+    mod,
+    newdat,
+    id_cols = c("rating_bin", "tc_bucket", "t", "period")
+  )
+  
+  pred_long |>
+    dplyr::select(-t) |>
+    tidyr::pivot_wider(
+      names_from = period,
+      values_from = pred_share
+    ) |>
+    dplyr::mutate(change = late - early) |>
+    dplyr::arrange(tc_bucket, dplyr::desc(abs(change)))
+}
+
+clean_opening_name <- function(x) make.names(x, unique = TRUE)
+
+op_all_mn <- train_mn |>
+  dplyr::bind_rows(test_mn)
+```
+
+```{r Opening Popularity Prediction Helpers}
+make_op_pred_grid <- function(data, rating_ref = NULL, t_ref = NULL) {
+  if (is.null(t_ref)) {
+    t_ref <- median(data$t, na.rm = TRUE)
+  }
+
+  rating_grid <- sort(unique(data$rating_bin))
+  rating_grid <- rating_grid[
+    seq(1, length(rating_grid), by = max(1, floor(length(rating_grid) / 6)))
+  ]
+
+  tidyr::crossing(
+    rating_bin = rating_grid,
+    tc_bucket = sort(unique(data$tc_bucket)),
+    t = t_ref
+  )
+}
+
+predict_mn_long <- function(mod, newdata, id_cols = c("rating_bin", "tc_bucket", "t")) {
+  pred <- predict(mod, newdata = newdata[, id_cols, drop = FALSE], type = "response") |>
+    as.data.frame()
+
+  out <- dplyr::bind_cols(newdata, pred) |>
+    tidyr::pivot_longer(
+      cols = -dplyr::all_of(id_cols),
+      names_to = "opening",
+      values_to = "pred_share"
+    )
+
+  out
+}
+```
+
+
+```{r Opening Popularity Primary Multinomial Fit}
+# Phase 2 primary inferential model:
+# pooled multinomial opening-choice model
+# Outcome = opening composition across top openings + Other
+y_part <- paste0("cbind(", paste(resp_cols_safe, collapse = ","), ")")
+
+# Start moderately: main effects + optional interaction rating_bin:tc_bucket
+fml_mn <- as.formula(paste0(
+  y_part, " ~ ",
+  "scale(rating_bin) + tc_bucket + t + scale(rating_bin):tc_bucket"
+))
+
+mn_pooled <- VGAM::vglm(
+  fml_mn,
+  family = VGAM::multinomial(),
+  data = train_mn
+)
+
+summary(mn_pooled)
+```
+
+```{r Opening Popularity Multinomial Eval}
+te <- test_mn |> dplyr::select(t, tc_bucket, rating_bin, bin_total, all_of(resp_cols_safe))
+Y  <- te |> dplyr::select(all_of(resp_cols_safe)) |> as.matrix()
+
+pred <- predict(mn_pooled, newdata = te |> dplyr::select(t, tc_bucket, rating_bin), type = "response")
+pred <- as.matrix(pred)
+
+# Align overlapping columns (VGAM may omit baseline column)
+common <- intersect(colnames(pred), colnames(Y))
+Y_use <- Y[, common, drop = FALSE]
+pred_use <- pred[, common, drop = FALSE]
+
+probs <- pred_use / rowSums(pred_use)
+
+row_loss <- map_dbl(seq_len(nrow(Y_use)), \(i) mn_logloss(Y_use[i,], probs[i,]))
+avg_logloss <- weighted.mean(row_loss, w = rowSums(Y_use))
+
+tibble::tibble(
+  model = "multinomial pooled",
+  n_test_rows = nrow(te),
+  avg_logloss_per_game = avg_logloss
+)
+```
+
+```{r Opening Popularity Multinomial Primary Results}
+cat("Primary inferential model for opening popularity/adoption\n")
+cat("Formula:\n")
+print(fml_mn)
+
+coef_tab <- as.data.frame(coef(summary(mn_pooled))) |>
+  tibble::rownames_to_column("term") |>
+  dplyr::rename(
+    estimate  = Estimate,
+    std.error = `Std. Error`,
+    statistic = `z value`,
+    p.value   = `Pr(>|z|)`
+  )
+
+# Show the most informative terms first
+coef_tab |>
+  dplyr::filter(
+    stringr::str_detect(term, "^scale\\(rating_bin\\)|^t:|^tc_bucket|^scale\\(rating_bin\\):tc_bucket")
+  ) |>
+  dplyr::arrange(p.value) |>
+  head(40)
+```
+
+
+```{r Opening Popularity Multinomial Primary Writeup}
+coef_tab <- coef(summary(mn_pooled))
+
+mn_coef <- as.data.frame(coef_tab) |>
+  tibble::rownames_to_column("term") |>
+  dplyr::rename(
+    estimate  = Estimate,
+    std.error = `Std. Error`,
+    statistic = `z value`,
+    p.value   = `Pr(>|z|)`
+  )
+
+mn_coef |> dplyr::arrange(p.value) |> head(40)
+
+# Phase 2 primary inferential writeup for opening popularity
+
+# 1) Store the formula text explicitly (good for the paper)
+fml_text <- deparse(fml_mn)
+cat("\nPRIMARY MODEL FORMULA (as fit):\n", fml_text, "\n\n")
+
+# 2) Baseline category (VGAM uses the last response level as reference by default)
+cat("REFERENCE CATEGORY for the primary multinomial model:\n")
+cat("  ", tail(resp_cols_safe, 1), "\n\n")
+
+# 3) Coefficient table in a tidy-ish tibble (works for vglm)
+coef_tab <- as.data.frame(coef(summary(mn_pooled)))
+coef_tab$term <- rownames(coef_tab)
+rownames(coef_tab) <- NULL
+
+mn_coef <- coef_tab |>
+  dplyr::rename(
+    estimate  = Estimate,
+    std_error = `Std. Error`,
+    z_value   = `z value`,
+    p_value   = `Pr(>|z|)`
+  ) |>
+  dplyr::select(term, estimate, std_error, z_value, p_value) |>
+  dplyr::arrange(p_value)
+
+mn_coef |> head(40)
+
+# 4) Save coefficient table for later writeup (recommended)
+# write.csv(mn_coef, "results/mn_opening_popularity_coef.csv", row.names = FALSE)
+
+# 5) Save name map (opening_safe -> opening original) for later interpretation
+# (you already have name_map with opening/opening_safe)
+# write.csv(name_map, "results/mn_opening_popularity_name_map.csv", row.names = FALSE)
+```
+
+```{r Opening Popularity Predicted Shares by Rating}
+# Predicted opening shares across representative rating bins and time controls
+rating_grid <- sort(unique(test_mn$rating_bin))
+rating_grid <- rating_grid[seq(1, length(rating_grid), by = max(1, floor(length(rating_grid) / 6)))]
+
+tc_grid <- sort(unique(test_mn$tc_bucket))
+t_ref <- median(test_mn$t, na.rm = TRUE)
+
+newdat <- tidyr::crossing(
+  rating_bin = rating_grid,
+  tc_bucket = tc_grid,
+  t = t_ref
+)
+
+pred <- predict(
+  mn_pooled,
+  newdata = newdat |> dplyr::select(t, tc_bucket, rating_bin),
+  type = "response"
+)
+
+pred_df <- newdat |>
+  dplyr::bind_cols(as.data.frame(pred)) |>
+  tidyr::pivot_longer(
+    cols = -c(rating_bin, tc_bucket, t),
+    names_to = "opening",
+    values_to = "pred_share"
+  )
+
+pred_df |>
+  dplyr::group_by(tc_bucket, rating_bin) |>
+  dplyr::arrange(tc_bucket, rating_bin, dplyr::desc(pred_share)) |>
+  dplyr::slice_head(n = 5) |>
+  dplyr::ungroup()
+```
+
+
+```{r Opening Popularity Predicted Share Change Over Time}
+# Predicted early vs late shares at representative rating bins
+t_early <- min(test_mn$t, na.rm = TRUE)
+t_late  <- max(test_mn$t, na.rm = TRUE)
+
+rating_ref <- median(test_mn$rating_bin, na.rm = TRUE)
+tc_grid <- sort(unique(test_mn$tc_bucket))
+
+newdat <- tidyr::crossing(
+  rating_bin = rating_ref,
+  tc_bucket = tc_grid,
+  t = c(t_early, t_late)
+) |>
+  dplyr::mutate(period = if_else(t == t_early, "early_test", "late_test"))
+
+pred <- predict(
+  mn_pooled,
+  newdata = newdat |> dplyr::select(t, tc_bucket, rating_bin),
+  type = "response"
+)
+
+pred_long <- newdat |>
+  dplyr::bind_cols(as.data.frame(pred)) |>
+  tidyr::pivot_longer(
+    cols = -c(rating_bin, tc_bucket, t, period),
+    names_to = "opening",
+    values_to = "pred_share"
+  )
+
+share_change <- pred_long |>
+  tidyr::pivot_wider(names_from = period, values_from = pred_share) |>
+  dplyr::mutate(change = late_test - early_test) |>
+  dplyr::arrange(tc_bucket, dplyr::desc(abs(change)))
+
+share_change |>
+  dplyr::group_by(tc_bucket) |>
+  dplyr::slice_head(n = 10) |>
+  dplyr::ungroup()
+```
+
+
+```{r Opening Popularity Count Models Prep}
+top_openings <- top_openings_pooled |> dplyr::pull(opening)
+openings_to_fit <- top_openings  # length == top_k
+stopifnot(length(openings_to_fit) == top_k)
+
+# Choose ONE opening to "write out" (most played overall)
+show_opening <- top_openings_pooled |>
+  dplyr::arrange(dplyr::desc(total_games)) |>
+  dplyr::slice(1) |>
+  dplyr::pull(opening)
+
+# Helpers
+wrmse_weighted <- function(truth, pred, w) {
+  sqrt(weighted.mean((truth - pred)^2, w = w, na.rm = TRUE))
+}
+
+safe_glmnb <- function(df) {
+  # Guard: NB needs variation and positive exposure
+  if (nrow(df) < 20) return(NULL)
+  if (all(df$games == 0)) return(NULL)
+  if (any(df$bin_total <= 0, na.rm = TRUE)) return(NULL)
+
+  tryCatch(
+    MASS::glm.nb(
+      games ~ scale(rating_bin) + tc_bucket + t + scale(rating_bin):tc_bucket + offset(log(bin_total)),
+      data = df
+    ),
+    error = function(e) NULL
+  )
+}
+
+safe_lm_wls <- function(df) {
+  if (nrow(df) < 20) return(NULL)
+  if (all(is.na(df$share))) return(NULL)
+  if (all(df$bin_total <= 0, na.rm = TRUE)) return(NULL)
+
+  tryCatch(
+    lm(
+      share ~ scale(rating_bin) + tc_bucket + t + scale(rating_bin):tc_bucket,
+      data = df,
+      weights = bin_total
+    ),
+    error = function(e) NULL
+  )
+}
+```
+
+```{r Opening Popularity NegBin Sensitivity}
+# Sensitivity model only:
+# one-opening-at-a-time count model with exposure
+# not the primary inferential family for repertoire composition
+counts_train <- counts_long |>
+  dplyr::filter(month %in% train_months) |>
+  dplyr::mutate(rate = games / bin_total)
+
+counts_test <- counts_long |>
+  dplyr::filter(month %in% test_months) |>
+  dplyr::mutate(rate = games / bin_total)
+
+nb_fits <- map(openings_to_fit, function(op) {
+  tr <- counts_train |> dplyr::filter(opening2 == op)
+  mod <- safe_glmnb(tr)
+  list(opening = op, model = mod)
+})
+names(nb_fits) <- openings_to_fit
+
+# Eval NegBin (WRMSE on RATE, weighted by bin_total)
+nb_eval <- map_dfr(nb_fits, function(x) {
+  op <- x$opening
+  mod <- x$model
+
+  te <- counts_test |> dplyr::filter(opening2 == op)
+
+  if (is.null(mod) || nrow(te) == 0) {
+    return(tibble::tibble(
+      opening = op,
+      model_family = "NegBin",
+      n_test = nrow(te),
+      wrmse_rate = NA_real_
+    ))
+  }
+
+  pred_counts <- predict(mod, newdata = te, type = "response")
+  pred_rate <- pred_counts / te$bin_total
+
+  tibble::tibble(
+    opening = op,
+    model_family = "NegBin",
+    n_test = nrow(te),
+    wrmse_rate = wrmse_weighted(te$rate, pred_rate, te$bin_total)
+  )
+})
+```
+
+```{r Opening Popularity WLS Sensitivity}
+# Sensitivity model only:
+# one-opening-at-a-time weighted share regression
+# used as a descriptive/robustness check against multinomial findings
+share_tbl <- counts_long |> dplyr::mutate(share = games / bin_total)
+
+share_train <- share_tbl |>
+  dplyr::filter(month %in% train_months, opening2 != "Other", opening2 %in% openings_to_fit)
+
+share_test <- share_tbl |>
+  dplyr::filter(month %in% test_months, opening2 != "Other", opening2 %in% openings_to_fit)
+
+wls_fits <- map(openings_to_fit, function(op) {
+  tr <- share_train |> dplyr::filter(opening2 == op)
+  mod <- safe_lm_wls(tr)
+  list(opening = op, model = mod)
+})
+names(wls_fits) <- openings_to_fit
+
+# Eval WLS (WRMSE on SHARE, weighted by bin_total)
+wls_eval <- map_dfr(wls_fits, function(x) {
+  op <- x$opening
+  mod <- x$model
+
+  te <- share_test |> dplyr::filter(opening2 == op)
+
+  if (is.null(mod) || nrow(te) == 0) {
+    return(tibble::tibble(
+      opening = op,
+      model_family = "WLS",
+      n_test = nrow(te),
+      wrmse_share = NA_real_
+    ))
+  }
+
+  pred_share <- predict(mod, newdata = te)
+  tibble::tibble(
+    opening = op,
+    model_family = "WLS",
+    n_test = nrow(te),
+    wrmse_share = wrmse_weighted(te$share, pred_share, te$bin_total)
+  )
+})
+```
+
+
+```{r Opening Popularity Sensitivity Comparison Tables}
+# Phase 2:
+# these are sensitivity comparisons for one-opening-at-a-time models.
+# The primary inferential results come from the pooled multinomial model.
+nb_table <- nb_eval |>
+  dplyr::arrange(wrmse_rate)
+
+wls_table <- wls_eval |>
+  dplyr::arrange(wrmse_share)
+
+nb_table
+wls_table
+
+# Side-by-side comparison (keeps each metric in its own column)
+compare_table <- nb_eval |>
+  dplyr::select(opening, n_test_nb = n_test, wrmse_rate) |>
+  dplyr::left_join(
+    wls_eval |> dplyr::select(opening, n_test_wls = n_test, wrmse_share),
+    by = "opening"
+  ) |>
+  dplyr::left_join(
+    top_openings_pooled |> dplyr::select(opening, total_games),
+    by = "opening"
+  ) |>
+  dplyr::arrange(dplyr::desc(total_games))
+
+compare_table
+```
+
+```{r Opening Popularity Sensitivity Examples}
+cat("\n\n=== Fully written-out example opening ===\n")
+cat("Opening:", show_opening, "\n\n")
+
+cat("NegBin model summary:\n")
+if (!is.null(nb_fits[[show_opening]]$model)) {
+  print(summary(nb_fits[[show_opening]]$model))
+} else {
+  cat("NegBin model failed to fit for this opening.\n")
+}
+
+cat("\nWLS model summary:\n")
+if (!is.null(wls_fits[[show_opening]]$model)) {
+  print(summary(wls_fits[[show_opening]]$model))
+} else {
+  cat("WLS model failed to fit for this opening.\n")
+}
+```
+
+```{r Opening Popularity Model Roles Summary}
+cat("
+Opening Popularity — Phase 2 model roles
+
+Primary inferential model:
+- mn_pooled (pooled multinomial)
+
+Sensitivity / descriptive models:
+- nb_fits  (per-opening NegBin with exposure)
+- wls_fits (per-opening weighted share regressions)
+")
+```
+
+
+##### Diagnostics
+
+```{r Opening Popularity Multinomial Diagnostics}
+# 1) Check baseline category is indeed "Other"
+tail(resp_cols_safe, 1)
+
+# 2) Category support by tc_bucket (train)
+cat_support <- train_mn |>
+  dplyr::select(tc_bucket, all_of(resp_cols_safe)) |>
+  dplyr::group_by(tc_bucket) |>
+  dplyr::summarise(dplyr::across(all_of(resp_cols_safe), sum), .groups = "drop") |>
+  tidyr::pivot_longer(-tc_bucket, names_to = "cat", values_to = "total") |>
+  dplyr::group_by(cat) |>
+  dplyr::summarise(min_total = min(total), .groups = "drop") |>
+  dplyr::arrange(min_total)
+cat_support |> head(10)
+
+# 3) Predicted shares in test: do they form a valid simplex row-wise?
+te <- test_mn |> dplyr::select(t, tc_bucket, rating_bin, bin_total, all_of(resp_cols_safe))
+pred <- predict(mn_pooled, newdata = te |> dplyr::select(t, tc_bucket, rating_bin), type = "response")
+pred <- as.matrix(pred)
+row_sums <- rowSums(pred)
+summary(row_sums)  # should be close to bin_total if VGAM returns counts, or constant scaling
+
+# Convert to shares over the categories returned
+pred_share <- pred / rowSums(pred)
+
+# Any negative / NA / >1 entries?
+summary(as.vector(pred_share))
+sum(is.na(pred_share))
+sum(pred_share < -1e-8)
+sum(pred_share > 1 + 1e-8)
+
+# 4) Calibration by rating bin: mean observed vs predicted share for each opening
+Y <- te |> dplyr::select(all_of(resp_cols_safe)) |> as.matrix()
+obs_share <- Y / rowSums(Y)
+
+common <- intersect(colnames(pred_share), colnames(obs_share))
+calib <- tibble::tibble(
+  rating_bin = te$rating_bin,
+  tc_bucket  = te$tc_bucket
+) |>
+  dplyr::bind_cols(
+    as_tibble(obs_share[, common, drop = FALSE]) |> dplyr::rename_with(~ paste0("obs_", .x)),
+    as_tibble(pred_share[, common, drop = FALSE]) |> dplyr::rename_with(~ paste0("pred_", .x))
+  ) |>
+  dplyr::group_by(tc_bucket, rating_bin) |>
+  dplyr::summarise(
+    dplyr::across(dplyr::starts_with("obs_"), mean, na.rm = TRUE),
+    dplyr::across(dplyr::starts_with("pred_"), mean, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Show a quick sanity subset for one opening
+one_open <- common[1]
+calib |>
+  dplyr::select(tc_bucket, rating_bin, paste0("obs_", one_open), paste0("pred_", one_open)) |>
+  head(12)
+```
+
+```{r Opening Popularity NegBin Diagnostics}
+# 1) Convergence / warnings already handled by safe_glmnb; summarize fit success
+nb_fit_status <- tibble::tibble(
+  opening = names(nb_fits),
+  fit_ok = purrr::map_lgl(nb_fits, ~ !is.null(.x$model))
+)
+nb_fit_status |> count(fit_ok)
+
+# 2) Residual diagnostics for the "written out" opening
+op <- show_opening
+nb_mod <- nb_fits[[op]]$model
+if (!is.null(nb_mod)) {
+  par(mfrow = c(1,2))
+  plot(nb_mod, which = 1)  # residuals vs fitted
+  plot(nb_mod, which = 2)  # QQ
+  par(mfrow = c(1,1))
+}
+
+# 3) Sensitivity to bin_total threshold (min_bin_total) — re-evaluate quickly
+# (cheap check: re-filter test set to stricter thresholds and see metric change)
+thresholds <- c(min_bin_total, 5000, 10000)
+
+nb_sens <- purrr::map_dfr(thresholds, function(th) {
+  te0 <- counts_test |> dplyr::filter(opening2 == op, bin_total >= th)
+  if (is.null(nb_mod) || nrow(te0) == 0) return(tibble::tibble(threshold = th, wrmse_rate = NA_real_, n = nrow(te0)))
+
+  pred_counts <- predict(nb_mod, newdata = te0, type = "response")
+  pred_rate <- pred_counts / te0$bin_total
+  tibble::tibble(
+    threshold = th,
+    n = nrow(te0),
+    wrmse_rate = wrmse_weighted(te0$rate, pred_rate, te0$bin_total)
+  )
+})
+nb_sens
+```
+
+```{r Opening Popularity WLS Diagnostics}
+op <- show_opening
+wls_mod <- wls_fits[[op]]$model
+
+if (!is.null(wls_mod)) {
+  plot_lm_basic(wls_mod, paste0("WLS share (", op, ")"))
+
+  bp <- lmtest::bptest(wls_mod)
+  bp
+
+  # Compare classic vs robust SEs for the key rating effect
+  wls_rob <- tidy_robust(wls_mod, type = "HC1")
+  wls_rob |> dplyr::filter(term %in% c("scale(rating_bin)", "t")) |> dplyr::arrange(p.value)
+}
+
+# Sensitivity to threshold on bin_total for WLS (same idea)
+thresholds <- c(min_bin_total, 5000, 10000)
+wls_sens <- purrr::map_dfr(thresholds, function(th) {
+  te0 <- share_test |> dplyr::filter(opening2 == op, bin_total >= th)
+  if (is.null(wls_mod) || nrow(te0) == 0) return(tibble::tibble(threshold = th, wrmse_share = NA_real_, n = nrow(te0)))
+
+  pred <- predict(wls_mod, newdata = te0)
+  tibble::tibble(
+    threshold = th,
+    n = nrow(te0),
+    wrmse_share = wrmse_weighted(te0$share, pred, te0$bin_total)
+  )
+})
+wls_sens
+```
+
+##### Summary
+
+```{r Opening Popularity Phase3 Rating Robustness}
+# Phase 3: linear rating effect vs flexible spline rating effect
+
+fml_mn_rating_spline <- as.formula(paste0(
+  y_part, " ~ splines::ns(rating_bin, df = 4) + tc_bucket + t + splines::ns(rating_bin, df = 4):tc_bucket"
+))
+
+mn_pooled_rating_spline <- VGAM::vglm(
+  fml_mn_rating_spline,
+  family = VGAM::multinomial(),
+  data = train_mn
+)
+
+# Compare predictive performance
+pred_lin <- predict(
+  mn_pooled,
+  newdata = test_mn |> dplyr::select(t, tc_bucket, rating_bin),
+  type = "response"
+) |>
+  as.matrix()
+
+pred_spline <- predict(
+  mn_pooled_rating_spline,
+  newdata = test_mn |> dplyr::select(t, tc_bucket, rating_bin),
+  type = "response"
+) |>
+  as.matrix()
+
+Y <- test_mn |> dplyr::select(all_of(resp_cols_safe)) |> as.matrix()
+
+common_lin <- intersect(colnames(pred_lin), colnames(Y))
+common_spline <- intersect(colnames(pred_spline), colnames(Y))
+
+Y_lin <- Y[, common_lin, drop = FALSE]
+Y_spline <- Y[, common_spline, drop = FALSE]
+
+p_lin <- pred_lin[, common_lin, drop = FALSE] / rowSums(pred_lin[, common_lin, drop = FALSE])
+p_spline <- pred_spline[, common_spline, drop = FALSE] / rowSums(pred_spline[, common_spline, drop = FALSE])
+
+row_loss_lin <- purrr::map_dbl(seq_len(nrow(Y_lin)), \(i) mn_logloss(Y_lin[i, ], p_lin[i, ]))
+row_loss_spline <- purrr::map_dbl(seq_len(nrow(Y_spline)), \(i) mn_logloss(Y_spline[i, ], p_spline[i, ]))
+
+op_rating_robust_tbl <- tibble::tibble(
+  model = c("linear_rating", "spline_rating"),
+  avg_logloss_per_game = c(
+    weighted.mean(row_loss_lin, w = rowSums(Y_lin)),
+    weighted.mean(row_loss_spline, w = rowSums(Y_spline))
+  )
+)
+
+op_rating_robust_tbl
+
+# Compare top predicted openings across rating bins
+pred_grid <- make_op_pred_grid(test_mn)
+
+pred_lin_long <- predict_mn_long(mn_pooled, pred_grid) |>
+  dplyr::mutate(model = "linear_rating")
+
+pred_spline_long <- predict_mn_long(mn_pooled_rating_spline, pred_grid) |>
+  dplyr::mutate(model = "spline_rating")
+
+bind_rows(pred_lin_long, pred_spline_long) |>
+  dplyr::group_by(model, tc_bucket, rating_bin) |>
+  dplyr::arrange(model, tc_bucket, rating_bin, dplyr::desc(pred_share)) |>
+  dplyr::slice_head(n = 5) |>
+  dplyr::ungroup()
+```
+
+```{r Opening Popularity Phase3 Time Robustness}
+# Phase 3: linear time vs spline time robustness
+
+fml_mn_time_spline <- as.formula(paste0(
+  y_part, " ~ scale(rating_bin) + tc_bucket + splines::ns(t, df = 4) + scale(rating_bin):tc_bucket"
+))
+
+mn_pooled_time_spline <- VGAM::vglm(
+  fml_mn_time_spline,
+  family = VGAM::multinomial(),
+  data = train_mn
+)
+
+# Predictive comparison
+pred_lin <- predict(
+  mn_pooled,
+  newdata = test_mn |> dplyr::select(t, tc_bucket, rating_bin),
+  type = "response"
+) |>
+  as.matrix()
+
+pred_spline <- predict(
+  mn_pooled_time_spline,
+  newdata = test_mn |> dplyr::select(t, tc_bucket, rating_bin),
+  type = "response"
+) |>
+  as.matrix()
+
+Y <- test_mn |> dplyr::select(all_of(resp_cols_safe)) |> as.matrix()
+
+common_lin <- intersect(colnames(pred_lin), colnames(Y))
+common_spline <- intersect(colnames(pred_spline), colnames(Y))
+
+Y_lin <- Y[, common_lin, drop = FALSE]
+Y_spline <- Y[, common_spline, drop = FALSE]
+
+p_lin <- pred_lin[, common_lin, drop = FALSE] / rowSums(pred_lin[, common_lin, drop = FALSE])
+p_spline <- pred_spline[, common_spline, drop = FALSE] / rowSums(pred_spline[, common_spline, drop = FALSE])
+
+row_loss_lin <- purrr::map_dbl(seq_len(nrow(Y_lin)), \(i) mn_logloss(Y_lin[i, ], p_lin[i, ]))
+row_loss_spline <- purrr::map_dbl(seq_len(nrow(Y_spline)), \(i) mn_logloss(Y_spline[i, ], p_spline[i, ]))
+
+op_time_robust_tbl <- tibble::tibble(
+  model = c("linear_time", "spline_time"),
+  avg_logloss_per_game = c(
+    weighted.mean(row_loss_lin, w = rowSums(Y_lin)),
+    weighted.mean(row_loss_spline, w = rowSums(Y_spline))
+  )
+)
+
+op_time_robust_tbl
+
+op_all_mn <- train_mn |> dplyr::bind_rows(test_mn)
+
+# Compare early-late share changes under both specs
+time_change_lin <- mn_time_change_tbl_fullspan(mn_pooled, op_all_mn) |>
+  dplyr::mutate(model = "linear_time")
+
+time_change_spline <- mn_time_change_tbl_fullspan(mn_pooled_time_spline, op_all_mn) |>
+  dplyr::mutate(model = "spline_time")
+
+bind_rows(time_change_lin, time_change_spline) |>
+  dplyr::arrange(model, tc_bucket, dplyr::desc(abs(change))) |>
+  dplyr::group_by(model, tc_bucket) |>
+  dplyr::slice_head(n = 10) |>
+  dplyr::ungroup()
+```
+
+```{r Opening Popularity Phase3 Threshold Robustness}
+phase3_top_k <- c(8, 12, 16)
+phase3_min_bin_total <- c(1000, 2000, 5000)
+
+fit_op_mn_spec <- function(top_k_val, min_bin_total_val) {
+  pom_spec <- pom_tc |>
+    dplyr::filter(
+      !is.na(opening), !is.na(tc_bucket), !is.na(month),
+      !is.na(avg_rating), !is.na(games)
+    ) |>
+    dplyr::mutate(
+      month_date = lubridate::ymd(paste0(month, "-01")),
+      t = as.integer(dplyr::dense_rank(month_date)),
+      rating_bin = as.integer(floor(avg_rating / rating_bin_width) * rating_bin_width)
+    )
+
+  pom_train_spec <- pom_spec |> dplyr::filter(month %in% train_months)
+  pom_test_spec  <- pom_spec |> dplyr::filter(month %in% test_months)
+
+  top_open_spec <- pom_train_spec |>
+    dplyr::group_by(opening) |>
+    dplyr::summarise(total_games = sum(games, na.rm = TRUE), .groups = "drop") |>
+    dplyr::slice_max(total_games, n = top_k_val, with_ties = FALSE)
+
+  counts_long_spec <- pom_spec |>
+    dplyr::left_join(
+      top_open_spec |> dplyr::mutate(is_top = TRUE) |> dplyr::select(opening, is_top),
+      by = "opening"
+    ) |>
+    dplyr::mutate(opening2 = dplyr::if_else(is_top %in% TRUE, opening, "Other")) |>
+    dplyr::group_by(month, month_date, t, tc_bucket, rating_bin, opening2) |>
+    dplyr::summarise(games = sum(games, na.rm = TRUE), .groups = "drop")
+
+  bin_totals_spec <- counts_long_spec |>
+    dplyr::group_by(month, month_date, t, tc_bucket, rating_bin) |>
+    dplyr::summarise(bin_total = sum(games, na.rm = TRUE), .groups = "drop") |>
+    dplyr::filter(bin_total >= min_bin_total_val)
+
+  counts_long_spec <- counts_long_spec |>
+    dplyr::inner_join(bin_totals_spec, by = c("month", "month_date", "t", "tc_bucket", "rating_bin"))
+
+  counts_wide_spec <- counts_long_spec |>
+    tidyr::pivot_wider(names_from = opening2, values_from = games, values_fill = 0)
+
+  train_spec <- counts_wide_spec |> dplyr::filter(month %in% train_months)
+  test_spec  <- counts_wide_spec |> dplyr::filter(month %in% test_months)
+
+  id_cols <- c("month", "month_date", "t", "tc_bucket", "rating_bin", "bin_total")
+  resp_cols <- setdiff(names(train_spec), id_cols)
+
+  if ("Other" %in% resp_cols) resp_cols <- c(setdiff(resp_cols, "Other"), "Other")
+
+  train_spec <- train_spec |> dplyr::select(dplyr::all_of(id_cols), dplyr::all_of(resp_cols))
+  test_spec  <- test_spec  |> dplyr::select(dplyr::all_of(id_cols), dplyr::all_of(resp_cols))
+
+  resp_cols_safe <- make.names(resp_cols, unique = TRUE)
+
+  train_mn_spec <- train_spec |> dplyr::rename_with(~ make.names(.x, unique = TRUE), dplyr::all_of(resp_cols))
+  test_mn_spec  <- test_spec  |> dplyr::rename_with(~ make.names(.x, unique = TRUE), dplyr::all_of(resp_cols))
+
+  if (nrow(train_mn_spec) == 0 || nrow(test_mn_spec) == 0 || length(resp_cols_safe) < 3) {
+    return(tibble::tibble(
+      n_test_rows = NA_integer_,
+      n_categories = NA_integer_,
+      avg_logloss_per_game = NA_real_,
+      top_mover_1 = NA_character_,
+      top_mover_1_change = NA_real_,
+      top_mover_2 = NA_character_,
+      top_mover_2_change = NA_real_
+    ))
+  }
+
+  fml_spec <- as.formula(paste0(
+    "cbind(", paste(resp_cols_safe, collapse = ","), ") ~ scale(rating_bin) + tc_bucket + t + scale(rating_bin):tc_bucket"
+  ))
+
+  mod <- VGAM::vglm(fml_spec, family = VGAM::multinomial(), data = train_mn_spec)
+
+  Y <- test_mn_spec |> dplyr::select(dplyr::all_of(resp_cols_safe)) |> as.matrix()
+  pred <- predict(mod, newdata = test_mn_spec |> dplyr::select(t, tc_bucket, rating_bin), type = "response") |> as.matrix()
+
+  common <- intersect(colnames(pred), colnames(Y))
+  Y_use <- Y[, common, drop = FALSE]
+  pred_use <- pred[, common, drop = FALSE]
+  probs <- pred_use / rowSums(pred_use)
+
+  row_loss <- purrr::map_dbl(seq_len(nrow(Y_use)), \(i) mn_logloss(Y_use[i, ], probs[i, ]))
+
+  all_spec <- train_mn_spec |>
+    dplyr::bind_rows(test_mn_spec)
+  
+  change_tbl <- mn_time_change_tbl_fullspan(mod, all_spec) |>
+    dplyr::arrange(dplyr::desc(abs(change)))
+
+  tibble::tibble(
+    n_test_rows = nrow(test_mn_spec),
+    n_categories = length(common),
+    avg_logloss_per_game = weighted.mean(row_loss, w = rowSums(Y_use)),
+    top_mover_1 = change_tbl$opening[1],
+    top_mover_1_change = change_tbl$change[1],
+    top_mover_2 = change_tbl$opening[2],
+    top_mover_2_change = change_tbl$change[2]
+  )
+}
+
+op_phase3_thresh <- tidyr::crossing(
+  top_k = phase3_top_k,
+  min_bin_total = phase3_min_bin_total
+) |>
+  dplyr::mutate(
+    out = purrr::map2(top_k, min_bin_total, ~ fit_op_mn_spec(.x, .y))
+  ) |>
+  tidyr::unnest(out)
+
+op_phase3_thresh
+```
+
+```{r Opening Popularity Phase3 Agreement Summary}
+# Compare multinomial time changes to one-opening sensitivity models
+mn_change_primary <- mn_time_change_tbl_fullspan(mn_pooled, op_all_mn) |>
+  dplyr::mutate(opening = clean_opening_name(opening)) |>
+  dplyr::select(tc_bucket, opening, mn_change = change) |>
+  dplyr::mutate(mn_sign = sign_label(mn_change))
+
+# NegBin sign for t by opening
+nb_sign_tbl <- purrr::map_dfr(nb_fits, function(x) {
+  mod <- x$model
+  op <- clean_opening_name(x$opening)
+  if (is.null(mod)) {
+    return(tibble::tibble(opening = op, nb_t = NA_real_, nb_sign = NA_character_))
+  }
+  td <- broom::tidy(mod)
+  tt <- td |> dplyr::filter(term == "t")
+  tibble::tibble(
+    opening = op,
+    nb_t = if (nrow(tt)) tt$estimate[[1]] else NA_real_,
+    nb_sign = sign_label(if (nrow(tt)) tt$estimate[[1]] else NA_real_)
+  )
+})
+
+# WLS sign for t by opening
+wls_sign_tbl <- purrr::map_dfr(wls_fits, function(x) {
+  mod <- x$model
+  op <- clean_opening_name(x$opening)
+  if (is.null(mod)) {
+    return(tibble::tibble(opening = op, wls_t = NA_real_, wls_sign = NA_character_))
+  }
+  td <- broom::tidy(mod)
+  tt <- td |> dplyr::filter(term == "t")
+  tibble::tibble(
+    opening = op,
+    wls_t = if (nrow(tt)) tt$estimate[[1]] else NA_real_,
+    wls_sign = sign_label(if (nrow(tt)) tt$estimate[[1]] else NA_real_)
+  )
+})
+
+mn_change_primary |>
+  dplyr::left_join(nb_sign_tbl, by = "opening") |>
+  dplyr::left_join(wls_sign_tbl, by = "opening") |>
+  dplyr::arrange(tc_bucket, dplyr::desc(abs(mn_change))) |>
+  dplyr::group_by(tc_bucket) |>
+  dplyr::slice_head(n = 12) |>
+  dplyr::ungroup()
+```
+
+
+```{r Opening Popularity Phase3 Claim Summary}
+# Main paper-oriented contrasts from the primary multinomial
+
+# Rating pattern: top predicted opening by rating bin
+pred_grid <- make_op_pred_grid(test_mn)
+
+rating_claim_tbl <- predict_mn_long(mn_pooled, pred_grid) |>
+  dplyr::group_by(tc_bucket, rating_bin) |>
+  dplyr::arrange(tc_bucket, rating_bin, dplyr::desc(pred_share)) |>
+  dplyr::slice_head(n = 3) |>
+  dplyr::ungroup() |>
+  dplyr::mutate(claim_type = "rating_profile", .before = 1)
+
+# Time pattern: largest movers
+time_claim_tbl <- mn_time_change_tbl_fullspan(mn_pooled, op_all_mn) |>
+  dplyr::group_by(tc_bucket) |>
+  dplyr::slice_head(n = 10) |>
+  dplyr::ungroup() |>
+  dplyr::mutate(claim_type = "time_change", .before = 1)
+
+rating_claim_tbl
+time_claim_tbl
+```
+
+
+#### Time-Use
+
+ Phase 2 model roles for Time-Use:
+
+ Primary inferential models for mean time-use:
+- `m_macro_add` / `m_macro_int`      (macro month-level, HAC inference)
+- `m_player_add_fe` / m`_player_int_fe`  (player-month, clustered inference)
+
+Primary inferential model for low-time frequency:
+- `m_frac`   (quasibinomial fractional model)
+- `m_binom`  (binomial approximation sensitivity / companion)
+
+Sensitivity / descriptive models:
+- `m_rlm`
+- `m_q50`, `m_q90`
+- phase allocation models
+
+```{r Time Use Prep, message = FALSE, warning = FALSE}
+# ---- Base tables ----
+ptm2 <- ptm_tc |>
+  dplyr::filter(!is.na(player), !is.na(month), !is.na(tc_bucket),
+                !is.na(avg_rating), !is.na(move_rows)) |>
+  dplyr::mutate(
+    month_date = lubridate::ymd(paste0(month, "-01")),
+    t = as.integer(dplyr::dense_rank(month_date))
+  )
+
+mvm2 <- mvm_tc |>
+  dplyr::filter(!is.na(month), !is.na(tc_bucket)) |>
+  dplyr::mutate(
+    month_date = lubridate::ymd(paste0(month, "-01")),
+    t = as.integer(dplyr::dense_rank(month_date))
+  )
+
+# ---- Reliability thresholds (tune as you like) ----
+min_moves_player <- 100    # player-month-tc must have at least this many moves to be included
+ptm2 <- ptm2 |> dplyr::filter(move_rows >= min_moves_player)
+
+# ---- Use the SAME forward split pattern as earlier ----
+months_ordered_tu <- ptm2 |>
+  dplyr::distinct(month, month_date, t) |>
+  dplyr::arrange(month_date)
+
+cut_idx_tu <- floor(0.80 * nrow(months_ordered_tu))
+train_months_tu <- months_ordered_tu |> dplyr::slice(1:cut_idx_tu) |> dplyr::pull(month)
+test_months_tu  <- months_ordered_tu |> dplyr::slice((cut_idx_tu+1):nrow(months_ordered_tu)) |> dplyr::pull(month)
+
+ptm_train <- ptm2 |> dplyr::filter(month %in% train_months_tu)
+ptm_test  <- ptm2 |> dplyr::filter(month %in% test_months_tu)
+
+mvm_train <- mvm2 |> dplyr::filter(month %in% train_months_tu)
+mvm_test  <- mvm2 |> dplyr::filter(month %in% test_months_tu)
+
+stopifnot(length(intersect(train_months_tu, test_months_tu)) == 0)
+
+# ---- Helpers ----
+wrmse_weighted <- function(truth, pred, w) sqrt(weighted.mean((truth - pred)^2, w = w, na.rm = TRUE))
+wmae_weighted  <- function(truth, pred, w) weighted.mean(abs(truth - pred), w = w, na.rm = TRUE)
+
+# NOTE:
+# For player_time_month_tc, move_rows is a natural weight.
+# For moves_month_tc, move_rows is already a column in the derived table (called move_rows in the build script).
+```
+
+```{r Time Use Phase3 Helpers}
+sign_label <- function(x) {
+  dplyr::case_when(
+    is.na(x) ~ NA_character_,
+    x > 0 ~ "positive",
+    x < 0 ~ "negative",
+    TRUE ~ "zero"
+  )
+}
+
+make_mean_time_profile <- function(
+  mod,
+  data,
+  rating_var = "avg_rating",
+  outcome_name = "avg_time_spent",
+  predict_type = NULL
+) {
+  rating_grid <- sort(unique(data[[rating_var]]))
+  rating_grid <- rating_grid[seq(1, length(rating_grid), by = max(1, floor(length(rating_grid) / 6)))]
+
+  newdat <- tidyr::crossing(
+    !!rlang::sym(rating_var) := rating_grid,
+    tc_bucket = sort(unique(data$tc_bucket)),
+    t = median(data$t, na.rm = TRUE)
+  )
+
+  pred <- if (is.null(predict_type)) {
+    predict(mod, newdata = newdat)
+  } else {
+    predict(mod, newdata = newdat, type = predict_type)
+  }
+
+  newdat |>
+    dplyr::mutate(
+      pred_value = as.numeric(pred),
+      outcome = outcome_name
+    )
+}
+
+make_mean_time_change <- function(
+  mod,
+  data,
+  rating_ref = NULL,
+  rating_var = "avg_rating",
+  outcome_name = "avg_time_spent",
+  predict_type = NULL
+) {
+  if (is.null(rating_ref)) rating_ref <- median(data[[rating_var]], na.rm = TRUE)
+
+  t_early <- min(data$t, na.rm = TRUE)
+  t_late  <- max(data$t, na.rm = TRUE)
+
+  newdat <- tidyr::crossing(
+    !!rlang::sym(rating_var) := rating_ref,
+    tc_bucket = sort(unique(data$tc_bucket)),
+    t = c(t_early, t_late)
+  ) |>
+    dplyr::mutate(period = dplyr::if_else(t == t_early, "early", "late"))
+
+  pred <- if (is.null(predict_type)) {
+    predict(mod, newdata = newdat)
+  } else {
+    predict(mod, newdata = newdat, type = predict_type)
+  }
+
+  newdat |>
+    dplyr::mutate(pred_value = as.numeric(pred)) |>
+    dplyr::select(-t) |>
+    tidyr::pivot_wider(names_from = period, values_from = pred_value) |>
+    dplyr::mutate(
+      change = late - early,
+      outcome = outcome_name
+    )
+}
+```
+
+
+```{r Time Use Primary Macro Mean Models}
+# Phase 2 primary inferential models for macro average time-use
+
+# 1) Build a macro "environment" table by joining moves_month_tc to meta_month_tc
+#    (Both are month x tc_bucket)
+mvm_env <- mvm2 |>
+  dplyr::left_join(
+    mm_tc2 |>
+      dplyr::transmute(
+        month, tc_bucket, month_date, t,
+        avg_rating_env = (avg_white_rating + avg_black_rating)/2,
+        avg_abs_rating_diff = avg_abs_rating_diff,
+        draw_rate = draw_rate
+      ),
+    by = c("month","tc_bucket","month_date","t")
+  )
+
+mvm_env_train <- mvm_env |> dplyr::filter(month %in% train_months_tu)
+mvm_env_test  <- mvm_env |> dplyr::filter(month %in% test_months_tu)
+
+# 2) Macro models: interpret tc_bucket as control/stratifier, not "the point"
+# Additive: common rating effect + tc_bucket shift + time trend
+m_macro_add <- lm(
+  avg_time_spent ~ scale(avg_rating_env) + tc_bucket + t,
+  data = mvm_env_train,
+  weights = move_rows
+)
+
+# Interaction: allow rating effect to differ by tc_bucket (optional but often reasonable)
+m_macro_int <- lm(
+  avg_time_spent ~ scale(avg_rating_env) * tc_bucket + t,
+  data = mvm_env_train,
+  weights = move_rows
+)
+
+pred_add <- predict(m_macro_add, newdata = mvm_env_test)
+pred_int <- predict(m_macro_int, newdata = mvm_env_test)
+
+tibble::tibble(
+  model = c("macro_additive", "macro_interaction"),
+  wrmse = c(
+    wrmse_weighted(mvm_env_test$avg_time_spent, pred_add, mvm_env_test$move_rows),
+    wrmse_weighted(mvm_env_test$avg_time_spent, pred_int, mvm_env_test$move_rows)
+  )
+)
+
+summary(m_macro_int)
+
+# 3) Repeat across other macro outcomes
+macro_targets <- c("median_time_spent", "p90_time_spent", "avg_clock_after", "low_time_rate")
+
+macro_eval <- map_dfr(macro_targets, function(y) {
+  f_add <- as.formula(paste0(y, " ~ scale(avg_rating_env) + tc_bucket + t"))
+  f_int <- as.formula(paste0(y, " ~ scale(avg_rating_env) * tc_bucket + t"))
+
+  m_add <- lm(f_add, data = mvm_env_train, weights = move_rows)
+  m_int <- lm(f_int, data = mvm_env_train, weights = move_rows)
+
+  p_add <- predict(m_add, newdata = mvm_env_test)
+  p_int <- predict(m_int, newdata = mvm_env_test)
+
+  tibble::tibble(
+    outcome = y,
+    model = c("additive", "interaction"),
+    wrmse = c(
+      wrmse_weighted(mvm_env_test[[y]], p_add, mvm_env_test$move_rows),
+      wrmse_weighted(mvm_env_test[[y]], p_int, mvm_env_test$move_rows)
+    )
+  )
+})
+
+macro_eval |> dplyr::arrange(outcome, model)
+```
+
+```{r Time Use Primary Player Mean Models}
+# Phase 2 primary inferential models for player-level average time-use
+
+# Weight player rows by move_rows (more observed moves = more stable averages)
+ptm_train2 <- ptm_train |> dplyr::filter(!is.na(avg_time_spent))
+ptm_test2  <- ptm_test  |> dplyr::filter(!is.na(avg_time_spent))
+
+# Phase 1 change: move to fixest::feols so clustered inference is easy
+m_player_add_fe <- fixest::feols(
+  avg_time_spent ~ scale(avg_rating) + tc_bucket + t,
+  data = ptm_train2,
+  weights = ~move_rows
+)
+
+m_player_int_fe <- fixest::feols(
+  avg_time_spent ~ scale(avg_rating) * tc_bucket + t,
+  data = ptm_train2,
+  weights = ~move_rows
+)
+
+p_add <- predict(m_player_add_fe, newdata = ptm_test2)
+p_int <- predict(m_player_int_fe, newdata = ptm_test2)
+
+tibble::tibble(
+  model = c("player_add_fe", "player_int_fe"),
+  wrmse = c(
+    wrmse_weighted(ptm_test2$avg_time_spent, p_add, ptm_test2$move_rows),
+    wrmse_weighted(ptm_test2$avg_time_spent, p_int, ptm_test2$move_rows)
+  )
+)
+
+summary(m_player_int_fe)
+```
+
+```{r Time Use Primary Mean Results}
+cat("Primary inferential models for average time-use\n\n")
+
+cat("Macro model (HAC inference)\n")
+compare_lm_ses(m_macro_int, hac_lag = 3) |>
+  dplyr::filter(term %in% c("scale(avg_rating_env)", "t") | stringr::str_detect(term, "tc_bucket"))
+
+cat("\nPlayer model (clustered inference)\n")
+compare_fixest_vcovs(
+  m_player_int_fe,
+  specs = list(
+    player_cluster = ~player,
+    two_way = ~player + month
+  )
+) |>
+  dplyr::filter(
+    term %in% c("scale(avg_rating)", "t") |
+      stringr::str_detect(term, "tc_bucket")
+  ) |>
+  dplyr::arrange(term, vcov)
+```
+
+
+```{r Time Use Robust Sensitivity}
+# Sensitivity model for outlier robustness; not a primary inferential model
+# Robust regression does NOT use weights the same way as lm; keep it simple.
+# If you want weights, you can subsample by move_rows or fit per tc_bucket.
+# This is still useful as a sensitivity check.
+
+ptm_train_r <- ptm_train2 |>
+  dplyr::select(avg_time_spent, avg_rating, tc_bucket, t) |>
+  tidyr::drop_na()
+
+m_rlm <- MASS::rlm(
+  avg_time_spent ~ scale(avg_rating) * tc_bucket + t,
+  data = ptm_train_r
+)
+
+summary(m_rlm)
+```
+```{r Time Use Quantile Sensitivity}
+# Sensitivity models for distributional heterogeneity; not primary unless the estimand is explicitly a quantile
+# Median regression (tau=0.5) and "upper tail" regression (tau=0.9)
+ptm_train_q <- ptm_train2 |>
+  dplyr::select(avg_time_spent, avg_rating, tc_bucket, t) |>
+  tidyr::drop_na()
+
+m_q50 <- quantreg::rq(
+  avg_time_spent ~ scale(avg_rating) * tc_bucket + t,
+  tau = 0.5,
+  data = ptm_train_q
+)
+
+m_q90 <- quantreg::rq(
+  avg_time_spent ~ scale(avg_rating) * tc_bucket + t,
+  tau = 0.9,
+  data = ptm_train_q
+)
+
+summary(m_q50)
+summary(m_q90)
+
+# Out-of-sample quantile metric:
+pinball_loss <- function(y, qhat, tau) mean((tau - (y < qhat)) * (y - qhat))
+
+ptm_test_q <- ptm_test2 |>
+  dplyr::select(avg_time_spent, avg_rating, tc_bucket, t, move_rows) |>
+  tidyr::drop_na()
+
+p50 <- predict(m_q50, newdata = ptm_test_q)
+p90 <- predict(m_q90, newdata = ptm_test_q)
+
+tibble::tibble(
+  model = c("rq_tau_0.5", "rq_tau_0.9"),
+  loss = c(
+    pinball_loss(ptm_test_q$avg_time_spent, p50, 0.5),
+    pinball_loss(ptm_test_q$avg_time_spent, p90, 0.9)
+  )
+)
+```
+
+```{r Time Use Primary Low-Time Model}
+# Phase 2 primary inferential model for low-time frequency
+
+ptm_train_ltr <- ptm_train |>
+  dplyr::filter(!is.na(low_time_rate), !is.na(avg_rating), !is.na(tc_bucket)) |>
+  dplyr::mutate(
+    # keep inside (0,1) to avoid boundary issues if you later switch to betareg
+    ltr_adj = pmin(pmax(low_time_rate, 1e-6), 1 - 1e-6)
+  )
+
+ptm_test_ltr <- ptm_test |>
+  dplyr::filter(!is.na(low_time_rate), !is.na(avg_rating), !is.na(tc_bucket)) |>
+  dplyr::mutate(
+    ltr_adj = pmin(pmax(low_time_rate, 1e-6), 1 - 1e-6)
+  )
+
+m_frac <- glm(
+  ltr_adj ~ scale(avg_rating) * tc_bucket + t,
+  family = quasibinomial(),
+  data = ptm_train_ltr,
+  weights = move_rows
+)
+
+summary(m_frac)
+
+# Evaluate (Brier-like MSE on proportions), weighted by move_rows
+p_frac <- predict(m_frac, newdata = ptm_test_ltr, type = "response")
+wrmse_weighted(ptm_test_ltr$low_time_rate, p_frac, ptm_test_ltr$move_rows)
+```
+
+```{r Time Use Low-Time Binomial Sensitivity}
+# Sensitivity / companion model for low-time frequency
+
+# Approximate successes as round(low_time_rate * move_rows)
+# This is a modeling convenience (not exact) but often close if move_rows is large.
+
+ptm_train_bin <- ptm_train |>
+  dplyr::filter(!is.na(low_time_rate), !is.na(move_rows)) |>
+  dplyr::mutate(
+    low_time_moves = as.integer(round(low_time_rate * move_rows)),
+    low_time_moves = pmin(pmax(low_time_moves, 0L), as.integer(move_rows))
+  )
+
+ptm_test_bin <- ptm_test |>
+  dplyr::filter(!is.na(low_time_rate), !is.na(move_rows)) |>
+  dplyr::mutate(
+    low_time_moves = as.integer(round(low_time_rate * move_rows)),
+    low_time_moves = pmin(pmax(low_time_moves, 0L), as.integer(move_rows))
+  )
+
+m_binom <- glm(
+  cbind(low_time_moves, move_rows - low_time_moves) ~ scale(avg_rating) * tc_bucket + t,
+  family = binomial(),
+  data = ptm_train_bin
+)
+
+summary(m_binom)
+
+p_bin <- predict(m_binom, newdata = ptm_test_bin, type = "response")
+wrmse_weighted(ptm_test_bin$low_time_rate, p_bin, ptm_test_bin$move_rows)
+```
+
+```{r Time Use Low-Time Primary Results}
+cat("Primary inferential model for low-time frequency\n")
+
+broom::tidy(m_frac) |>
+  dplyr::filter(
+    term %in% c("(Intercept)", "scale(avg_rating)", "t") |
+      stringr::str_detect(term, "tc_bucket")
+  ) |>
+  dplyr::arrange(p.value)
+
+cat("\nBinomial approximation sensitivity check\n")
+broom::tidy(m_binom) |>
+  dplyr::filter(
+    term %in% c("(Intercept)", "scale(avg_rating)", "t") |
+      stringr::str_detect(term, "tc_bucket")
+  ) |>
+  dplyr::arrange(p.value)
+```
+
+
+```{r Time Use Phase Allocation}
+# Secondary mean-model extensions:
+# phase-specific average time use (opening, middlegame, endgame)
+phase_vars <- c("avg_time_opening", "avg_time_middlegame", "avg_time_endgame")
+
+phase_eval <- map_dfr(phase_vars, function(y) {
+  tr <- ptm_train |> dplyr::filter(!is.na(.data[[y]]))
+  te <- ptm_test  |> dplyr::filter(!is.na(.data[[y]]))
+
+  if (nrow(tr) < 200 || nrow(te) < 50) {
+    return(tibble::tibble(phase = y, model = NA_character_, wrmse = NA_real_))
+  }
+
+  m_add <- lm(
+    reformulate(c("scale(avg_rating)", "tc_bucket", "t"), response = y),
+    data = tr,
+    weights = move_rows
+  )
+  m_int <- lm(
+    reformulate(c("scale(avg_rating)*tc_bucket", "t"), response = y),
+    data = tr,
+    weights = move_rows
+  )
+
+  p_add <- predict(m_add, newdata = te)
+  p_int <- predict(m_int, newdata = te)
+
+  tibble::tibble(
+    phase = y,
+    model = c("additive", "interaction"),
+    wrmse = c(
+      wrmse_weighted(te[[y]], p_add, te$move_rows),
+      wrmse_weighted(te[[y]], p_int, te$move_rows)
+    )
+  )
+})
+
+phase_eval
+```
+
+```{r Time Use Model Roles Summary}
+cat("
+Time-Use — Phase 2 model roles
+
+Primary inferential models:
+- Macro average time-use: m_macro_add / m_macro_int (HAC inference)
+- Player average time-use: m_player_add_fe / m_player_int_fe (clustered inference)
+- Low-time frequency: m_frac
+- Low-time companion sensitivity: m_binom
+
+Sensitivity / descriptive models:
+- m_rlm
+- m_q50, m_q90
+- phase allocation models
+")
+```
+
+
+##### Diagnostics
+
+```{r Time Use Macro HAC Diagnostics}
+compare_lm_ses(m_macro_add, hac_lag = 3)
+compare_lm_ses(m_macro_int, hac_lag = 3)
+
+plot_resid_acf(m_macro_int, "Macro time-use interaction", lag.max = 12)
+
+lmtest::bgtest(m_macro_int, order = 3)
+```
+
+`scale(avg_rating):tc_bucket_classical` is not stable, so it shouldn't be treated as an inferential result going forward.
+
+
+```{r Time Use Primary Mean Model Diagnostics}
+# Macro interaction model diagnostics
+plot_lm_basic(m_macro_int, "Macro time-use (interaction)")
+plot_resid_acf(m_macro_int, "Macro time-use (interaction)", lag.max = 12)
+
+# Player interaction model diagnostics (manual because this is fixest now)
+player_diag_df <- tibble::tibble(
+  fitted = fitted(m_player_int_fe),
+  resid  = resid(m_player_int_fe)
+)
+
+ggplot(player_diag_df, aes(x = fitted, y = resid)) +
+  geom_point(alpha = 0.25) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Player time-use (interaction, FEOLS) — Residuals vs Fitted",
+       x = "Fitted", y = "Residual") +
+  theme_minimal()
+
+ggplot(player_diag_df, aes(sample = resid)) +
+  stat_qq(alpha = 0.25) +
+  stat_qq_line() +
+  labs(title = "Player time-use (interaction, FEOLS) — QQ plot") +
+  theme_minimal()
+
+# BP for macro only (lm model)
+tibble::tibble(
+  model = "m_macro_int",
+  bp_p  = lmtest::bptest(m_macro_int)$p.value
+)
+
+# HAC comparison for macro model
+compare_lm_ses(m_macro_int, hac_lag = 3)
+
+# Phase 1 key comparison: clustered VCOVs for player model
+compare_fixest_vcovs(
+  m_player_int_fe,
+  specs = list(
+    iid = "iid",
+    HC1 = "hetero",
+    player_cluster = ~player,
+    month_cluster = ~month,
+    two_way = ~player + month
+  )
+) |>
+  dplyr::filter(term %in% c("scale(avg_rating)", "t") | stringr::str_detect(term, "tc_bucket")) |>
+  dplyr::arrange(term, vcov)
+```
+
+```{r Time Use Robust-Quantile Diagnostics}
+# Robust regression: look at residual distribution quickly
+if (exists("m_rlm")) {
+  rlm_resid <- resid(m_rlm)
+  summary(rlm_resid)
+  ggplot(tibble::tibble(resid = rlm_resid), aes(resid)) +
+    geom_histogram(bins = 60) +
+    labs(title = "RLM residual distribution") +
+    theme_minimal()
+}
+
+# Quantile regression: compare fitted vs observed scatter (tau 0.5 and 0.9)
+if (exists("m_q50")) {
+  ptm_test_q2 <- ptm_test_q |> dplyr::mutate(pred50 = p50, pred90 = p90)
+  ggplot(ptm_test_q2, aes(x = pred50, y = avg_time_spent)) +
+    geom_point(alpha = 0.15) +
+    labs(title = "Quantile regression (tau=0.5): predicted vs observed", x = "Predicted median", y = "Observed") +
+    theme_minimal()
+
+  ggplot(ptm_test_q2, aes(x = pred90, y = avg_time_spent)) +
+    geom_point(alpha = 0.15) +
+    labs(title = "Quantile regression (tau=0.9): predicted vs observed", x = "Predicted 90th pct", y = "Observed") +
+    theme_minimal()
+}
+```
+
+```{r Time Use Low-Time Diagnostics}
+# 1) Check mass at zero (why beta regression is awkward)
+ltr_mass <- ptm2 |>
+  dplyr::summarise(
+    n = n(),
+    frac_zero = mean(low_time_rate == 0, na.rm = TRUE),
+    frac_one  = mean(low_time_rate == 1, na.rm = TRUE)
+  )
+ltr_mass
+
+# 2) Calibration: binned observed vs predicted low_time_rate in test
+ptm_test_ltr2 <- ptm_test_ltr |> dplyr::mutate(pred = p_frac)
+
+cal_ltr <- ptm_test_ltr2 |>
+  dplyr::mutate(bin = cut(low_time_rate, breaks = c(-Inf, 0, 0.01, 0.02, 0.05, 0.1, 0.2, 0.4, Inf))) |>
+  dplyr::group_by(tc_bucket, bin) |>
+  dplyr::summarise(
+    n = n(),
+    obs = weighted.mean(low_time_rate, w = move_rows, na.rm = TRUE),
+    pred= weighted.mean(pred, w = move_rows, na.rm = TRUE),
+    .groups = "drop"
+  )
+cal_ltr |> head(12)
+```
+
+
+##### Summary
+
+```{r Time Use Phase3 Mean Robustness}
+# Phase 3: do the main mean time-use conclusions survive flexible functional forms?
+
+# ---- Macro robustness: linear time vs spline time ----
+m_macro_int_spline <- lm(
+  avg_time_spent ~ scale(avg_rating_env) * tc_bucket + splines::ns(t, df = 4),
+  data = mvm_env_train,
+  weights = move_rows
+)
+
+pred_macro_linear <- predict(m_macro_int, newdata = mvm_env_test)
+pred_macro_spline <- predict(m_macro_int_spline, newdata = mvm_env_test)
+
+macro_phase3_tbl <- tibble::tibble(
+  model = c("macro_linear_time", "macro_spline_time"),
+  wrmse = c(
+    wrmse_weighted(mvm_env_test$avg_time_spent, pred_macro_linear, mvm_env_test$move_rows),
+    wrmse_weighted(mvm_env_test$avg_time_spent, pred_macro_spline, mvm_env_test$move_rows)
+  )
+)
+
+macro_phase3_tbl
+
+# ---- Player robustness: linear rating vs spline rating ----
+m_player_int_fe_spline <- fixest::feols(
+  avg_time_spent ~ splines::ns(avg_rating, df = 4) * tc_bucket + t,
+  data = ptm_train2,
+  weights = ~move_rows
+)
+
+pred_player_linear <- predict(m_player_int_fe, newdata = ptm_test2)
+pred_player_spline <- predict(m_player_int_fe_spline, newdata = ptm_test2)
+
+player_phase3_tbl <- tibble::tibble(
+  model = c("player_linear_rating", "player_spline_rating"),
+  wrmse = c(
+    wrmse_weighted(ptm_test2$avg_time_spent, pred_player_linear, ptm_test2$move_rows),
+    wrmse_weighted(ptm_test2$avg_time_spent, pred_player_spline, ptm_test2$move_rows)
+  )
+)
+
+player_phase3_tbl
+
+# ---- Interpretable predicted profiles ----
+mean_profile_linear <- make_mean_time_profile(
+  m_player_int_fe,
+  ptm_test2,
+  rating_var = "avg_rating",
+  outcome_name = "avg_time_spent"
+) |>
+  dplyr::mutate(model = "player_linear_rating")
+
+mean_profile_spline <- make_mean_time_profile(
+  m_player_int_fe_spline,
+  ptm_test2,
+  rating_var = "avg_rating",
+  outcome_name = "avg_time_spent"
+) |>
+  dplyr::mutate(model = "player_spline_rating")
+
+bind_rows(mean_profile_linear, mean_profile_spline) |>
+  dplyr::arrange(model, tc_bucket, avg_rating)
+
+mean_change_linear <- make_mean_time_change(
+  m_player_int_fe,
+  ptm_train2 |> dplyr::bind_rows(ptm_test2),
+  rating_var = "avg_rating",
+  outcome_name = "avg_time_spent"
+) |>
+  dplyr::mutate(model = "player_linear_rating")
+
+mean_change_spline <- make_mean_time_change(
+  m_player_int_fe_spline,
+  ptm_train2 |> dplyr::bind_rows(ptm_test2),
+  rating_var = "avg_rating",
+  outcome_name = "avg_time_spent"
+) |>
+  dplyr::mutate(model = "player_spline_rating")
+
+bind_rows(mean_change_linear, mean_change_spline) |>
+  dplyr::arrange(model, dplyr::desc(abs(change)))
+```
+
+```{r Time Use Phase3 Mean Agreement Summary}
+# Phase 3: do direction/sign conclusions agree across mean-time sensitivity models?
+
+primary_terms <- compare_fixest_vcovs(
+  m_player_int_fe,
+  specs = list(two_way = ~player + month)
+) |>
+  dplyr::filter(
+    term %in% c("scale(avg_rating)", "t") |
+      stringr::str_detect(term, "tc_bucket")
+  ) |>
+  dplyr::transmute(
+    term,
+    fe_estimate = estimate,
+    fe_sign = sign_label(estimate),
+    fe_p = p.value
+  )
+
+rlm_terms <- broom::tidy(m_rlm) |>
+  dplyr::filter(
+    term %in% c("scale(avg_rating)", "t") |
+      stringr::str_detect(term, "tc_bucket")
+  ) |>
+  dplyr::transmute(
+    term,
+    rlm_estimate = estimate,
+    rlm_sign = sign_label(estimate)
+  )
+
+q50_terms <- broom::tidy(m_q50) |>
+  dplyr::filter(
+    term %in% c("scale(avg_rating)", "t") |
+      stringr::str_detect(term, "tc_bucket")
+  ) |>
+  dplyr::transmute(
+    term,
+    q50_estimate = estimate,
+    q50_sign = sign_label(estimate)
+  )
+
+q90_terms <- broom::tidy(m_q90) |>
+  dplyr::filter(
+    term %in% c("scale(avg_rating)", "t") |
+      stringr::str_detect(term, "tc_bucket")
+  ) |>
+  dplyr::transmute(
+    term,
+    q90_estimate = estimate,
+    q90_sign = sign_label(estimate)
+  )
+
+time_use_mean_agreement <- primary_terms |>
+  dplyr::left_join(rlm_terms, by = "term") |>
+  dplyr::left_join(q50_terms, by = "term") |>
+  dplyr::left_join(q90_terms, by = "term")
+
+time_use_mean_agreement
+```
+
+```{r Time Use Phase3 Low Time Robustness}
+# Phase 3: robustness of low-time conclusions
+
+# ---- Primary vs companion family ----
+frac_terms <- broom::tidy(m_frac) |>
+  dplyr::filter(
+    term %in% c("scale(avg_rating)", "t") |
+      stringr::str_detect(term, "tc_bucket")
+  ) |>
+  dplyr::transmute(
+    term,
+    frac_estimate = estimate,
+    frac_sign = sign_label(estimate),
+    frac_p = p.value
+  )
+
+binom_terms <- broom::tidy(m_binom) |>
+  dplyr::filter(
+    term %in% c("scale(avg_rating)", "t") |
+      stringr::str_detect(term, "tc_bucket")
+  ) |>
+  dplyr::transmute(
+    term,
+    binom_estimate = estimate,
+    binom_sign = sign_label(estimate),
+    binom_p = p.value
+  )
+
+low_time_family_agreement <- frac_terms |>
+  dplyr::left_join(binom_terms, by = "term")
+
+low_time_family_agreement
+
+# ---- Flexible rating robustness for low-time ----
+m_frac_spline <- glm(
+  ltr_adj ~ splines::ns(avg_rating, df = 4) * tc_bucket + t,
+  family = quasibinomial(),
+  data = ptm_train_ltr,
+  weights = move_rows
+)
+
+p_frac_linear <- predict(m_frac, newdata = ptm_test_ltr, type = "response")
+p_frac_spline <- predict(m_frac_spline, newdata = ptm_test_ltr, type = "response")
+
+low_time_phase3_tbl <- tibble::tibble(
+  model = c("frac_linear_rating", "frac_spline_rating"),
+  wrmse = c(
+    wrmse_weighted(ptm_test_ltr$low_time_rate, p_frac_linear, ptm_test_ltr$move_rows),
+    wrmse_weighted(ptm_test_ltr$low_time_rate, p_frac_spline, ptm_test_ltr$move_rows)
+  )
+)
+
+low_time_phase3_tbl
+
+cat("\nInterpretation note: frac_spline_rating is numerically unstable in the tails, so substantive low-time conclusions should rely on frac_linear_rating plus the binomial companion check.\n")
+
+# ---- Predicted profiles ----
+low_time_profile_linear <- make_mean_time_profile(
+  m_frac,
+  ptm_test_ltr,
+  rating_var = "avg_rating",
+  outcome_name = "low_time_rate",
+  predict_type = "response"
+) |>
+  dplyr::mutate(model = "frac_linear_rating")
+
+low_time_profile_spline <- make_mean_time_profile(
+  m_frac_spline,
+  ptm_test_ltr,
+  rating_var = "avg_rating",
+  outcome_name = "low_time_rate",
+  predict_type = "response"
+) |>
+  dplyr::mutate(model = "frac_spline_rating")
+
+low_time_profile_linear |>
+  dplyr::arrange(tc_bucket, avg_rating)
+
+bind_rows(low_time_profile_linear, low_time_profile_spline) |>
+  dplyr::arrange(model, tc_bucket, avg_rating)
+```
+
+```{r Time Use Phase3 Claim Summary}
+mean_claim_tbl <- make_mean_time_change(
+  m_player_int_fe,
+  ptm_train2 |> dplyr::bind_rows(ptm_test2),
+  rating_var = "avg_rating",
+  outcome_name = "avg_time_spent"
+) |>
+  dplyr::mutate(claim_type = "mean_time_change", .before = 1)
+
+mean_profile_claim_tbl <- make_mean_time_profile(
+  m_player_int_fe,
+  ptm_test2,
+  rating_var = "avg_rating",
+  outcome_name = "avg_time_spent"
+) |>
+  dplyr::mutate(claim_type = "mean_time_profile", .before = 1)
+
+low_time_profile_claim_tbl <- make_mean_time_profile(
+  m_frac,
+  ptm_test_ltr,
+  rating_var = "avg_rating",
+  outcome_name = "low_time_rate",
+  predict_type = "response"
+) |>
+  dplyr::mutate(claim_type = "low_time_profile", .before = 1)
+
+bind_rows(
+  mean_claim_tbl,
+  mean_profile_claim_tbl,
+  low_time_profile_claim_tbl
+)
+```
+
+
+#### Player-Progression Models
+
+<!--
+Design Choices:
+
+Observational unit: player–month (from pm).
+Target: Δrating_{t+1} = avg_rating_{t+1} − avg_rating_t (and optionally 3-month).
+Feature timing: all predictors from month t only; target uses month t+1 (or t+3).
+Split: forward-in-time by month; no future months in training.
+Reliability filters: use games and (if joined) move_rows to reduce volatility.
+-->
+
+ Phase 2 model roles for Player Progression:
+
+ Primary inferential models:
+- `fe_1m$model`
+- `fe_3m$model`
+- `fe_abs$model`
+
+Predictive-only benchmark models:
+- `ridge_1m`, `ridge_3m`, `ridge_abs`
+- `rf_1m`, `rf_3m`, `rf_abs`
+
+Interpretation of FE models:
+within-player association between month-t covariates and future rating change
+
+```{r Progression Prep}
+# ---- Settings ----
+min_games_pm   <- 10   # reliability filter for player-month
+min_moves_ptm  <- 40   # if joining time-use, filter for stability
+horizons       <- c(1, 3)  # months-ahead targets
+
+# ---- Base player-month table ----
+pm2 <- pm |>
+  dplyr::filter(!is.na(player), !is.na(month), !is.na(avg_rating), !is.na(games)) |>
+  dplyr::mutate(
+    month_date = lubridate::ymd(paste0(month, "-01"))
+  ) |>
+  dplyr::arrange(player, month_date) |>
+  dplyr::filter(games >= min_games_pm)
+
+# ---- Build future rating targets ----
+# d_rating_1m = next month's avg_rating - current
+# d_rating_3m = 3 months ahead - current
+pm_targets <- pm2 |>
+  dplyr::group_by(player) |>
+  dplyr::mutate(
+    next_rating_1m = dplyr::lead(avg_rating, 1),
+    next_rating_3m = dplyr::lead(avg_rating, 3),
+    d_rating_1m = next_rating_1m - avg_rating,
+    d_rating_3m = next_rating_3m - avg_rating,
+    abs_d_rating_1m = abs(d_rating_1m)
+  ) |>
+  dplyr::ungroup()
+
+# ---- Month-forward split (use the same month split idea as other sections) ----
+months_ordered_pm <- pm_targets |>
+  dplyr::distinct(month, month_date) |>
+  dplyr::arrange(month_date)
+
+cut_idx <- floor(0.80 * nrow(months_ordered_pm))
+train_months_pm <- months_ordered_pm |> dplyr::slice(1:cut_idx) |> dplyr::pull(month)
+test_months_pm  <- months_ordered_pm |> dplyr::slice((cut_idx+1):nrow(months_ordered_pm)) |> dplyr::pull(month)
+
+stopifnot(length(intersect(train_months_pm, test_months_pm)) == 0)
+
+pm_train0 <- pm_targets |> dplyr::filter(month %in% train_months_pm)
+pm_test0  <- pm_targets |> dplyr::filter(month %in% test_months_pm)
+
+range(pm_train0$month_date); range(pm_test0$month_date)
+```
+```{r Progression Join Time Use}
+# Collapse ptm_tc to player-month by move_rows-weighted averages across tc_bucket
+ptm_pm <- ptm_tc |>
+  dplyr::filter(!is.na(player), !is.na(month), !is.na(move_rows)) |>
+  dplyr::filter(move_rows >= min_moves_ptm) |>
+  dplyr::group_by(player, month) |>
+  dplyr::summarise(
+    move_rows_total = sum(move_rows, na.rm = TRUE),
+    avg_time_spent_all = sum(avg_time_spent * move_rows, na.rm = TRUE) / sum(move_rows, na.rm = TRUE),
+    p90_time_spent_all = sum(p90_time_spent * move_rows, na.rm = TRUE) / sum(move_rows, na.rm = TRUE),
+    avg_clock_after_all = sum(avg_clock_after * move_rows, na.rm = TRUE) / sum(move_rows, na.rm = TRUE),
+    low_time_rate_all = sum(low_time_rate * move_rows, na.rm = TRUE) / sum(move_rows, na.rm = TRUE),
+    avg_time_opening_all = sum(avg_time_opening * move_rows, na.rm = TRUE) / sum(move_rows, na.rm = TRUE),
+    avg_time_middlegame_all = sum(avg_time_middlegame * move_rows, na.rm = TRUE) / sum(move_rows, na.rm = TRUE),
+    avg_time_endgame_all = sum(avg_time_endgame * move_rows, na.rm = TRUE) / sum(move_rows, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Join to player-month
+pm_with_time <- pm_targets |>
+  dplyr::left_join(ptm_pm, by = c("player","month"))
+```
+
+```{r Progression Join Repertoire}
+# Collapse pom_tc to player-month opening shares (across tc_bucket)
+pom_pm <- pom_tc |>
+  dplyr::filter(!is.na(player), !is.na(month), !is.na(opening), !is.na(games)) |>
+  dplyr::group_by(player, month, opening) |>
+  dplyr::summarise(games_opening = sum(games), .groups = "drop") |>
+  dplyr::group_by(player, month) |>
+  dplyr::mutate(games_total_opening = sum(games_opening)) |>
+  dplyr::ungroup()
+
+# Concentration: share in most-played opening (top_opening_share)
+top_share <- pom_pm |>
+  dplyr::group_by(player, month) |>
+  dplyr::summarise(
+    top_opening_share = max(games_opening / games_total_opening, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Churn proxy (simple): did the most-played opening change vs previous month?
+top_opening <- pom_pm |>
+  dplyr::group_by(player, month) |>
+  dplyr::slice_max(order_by = games_opening, n = 1, with_ties = FALSE) |>
+  dplyr::ungroup() |>
+  dplyr::select(player, month, top_opening_name = opening)
+
+opening_switch <- top_opening |>
+  dplyr::mutate(month_date = lubridate::ymd(paste0(month, "-01"))) |>
+  dplyr::arrange(player, month_date) |>
+  dplyr::group_by(player) |>
+  dplyr::mutate(prev_top_opening = dplyr::lag(top_opening_name),
+                switched_opening = dplyr::if_else(!is.na(prev_top_opening) & top_opening_name != prev_top_opening, 1L, 0L)) |>
+  dplyr::ungroup() |>
+  dplyr::select(player, month, switched_opening)
+
+pm_feat <- pm_with_time |>
+  dplyr::left_join(top_share, by = c("player","month")) |>
+  dplyr::left_join(opening_switch, by = c("player","month"))
+```
+
+```{r Progression Model Datasets}
+# 1-month improvement target
+dat_1m <- pm_feat |>
+  dplyr::filter(!is.na(d_rating_1m)) 
+
+# 3-month improvement target (harder; fewer rows)
+dat_3m <- pm_feat |>
+  dplyr::filter(!is.na(d_rating_3m))
+
+# Stability target: absolute change
+dat_abs <- pm_feat |>
+  dplyr::filter(!is.na(abs_d_rating_1m))
+
+# Train/test split by month (forward-in-time)
+split_train_test <- function(df) {
+  list(
+    train = df |> dplyr::filter(month %in% train_months_pm),
+    test  = df |> dplyr::filter(month %in% test_months_pm)
+  )
+}
+
+spl_1m  <- split_train_test(dat_1m)
+spl_3m  <- split_train_test(dat_3m)
+spl_abs <- split_train_test(dat_abs)
+
+# sanity sizes
+c(
+  n_train_1m = nrow(spl_1m$train), n_test_1m = nrow(spl_1m$test),
+  n_train_3m = nrow(spl_3m$train), n_test_3m = nrow(spl_3m$test),
+  n_train_abs = nrow(spl_abs$train), n_test_abs = nrow(spl_abs$test)
+)
+```
+
+```{r Progression Predictive Ridge Benchmark}
+# Predictive benchmark only; not a primary inferential model
+
+# ---- Base (low-missingness) feature set ----
+# These should be essentially complete after your pm + repertoire joins.
+base_feature_cols <- c(
+  "avg_rating", "games", "avg_moves", "opening_diversity",
+  "top_opening_share", "switched_opening"
+)
+
+# Keep only columns that actually exist (robust to edits)
+base_feature_cols <- intersect(base_feature_cols, names(spl_1m$train))
+
+prep_xy <- function(df, ycol, xcols) {
+  df2 <- df |> dplyr::select(all_of(c(ycol, xcols))) |> tidyr::drop_na()
+  y <- df2[[ycol]]
+  X <- model.matrix(reformulate(xcols), data = df2)[, -1, drop = FALSE]
+  list(X = X, y = y)
+}
+
+fit_glmnet_ridge <- function(spl, ycol, xcols, label) {
+  tr <- prep_xy(spl$train, ycol, xcols)
+  te <- prep_xy(spl$test,  ycol, xcols)
+
+  cv <- glmnet::cv.glmnet(tr$X, tr$y, alpha = 0.0)  # ridge
+  pred <- as.numeric(predict(cv, newx = te$X, s = "lambda.1se"))
+
+  metrics <- tibble::tibble(
+    model = label,
+    n_train = nrow(tr$X),
+    n_test  = nrow(te$X),
+    rmse = yardstick::rmse_vec(te$y, pred),
+    mae  = yardstick::mae_vec(te$y, pred)
+  )
+
+  # Coefficient table (lambda.1se), robust to column naming
+  coef_mat <- coef(cv, s = "lambda.1se")
+  coef_df <- as.matrix(coef_mat) |>
+    as.data.frame() |>
+    tibble::rownames_to_column("term") |>
+    dplyr::rename(coef = dplyr::last_col()) |>
+    dplyr::mutate(abs_coef = abs(coef)) |>
+    dplyr::arrange(dplyr::desc(abs_coef))
+
+  list(metrics = metrics, coef = coef_df)
+}
+
+# Fit for all three targets
+ridge_1m  <- fit_glmnet_ridge(spl_1m,  "d_rating_1m",      base_feature_cols, "glmnet_ridge_1m")
+ridge_3m  <- fit_glmnet_ridge(spl_3m,  "d_rating_3m",      base_feature_cols, "glmnet_ridge_3m")
+ridge_abs <- fit_glmnet_ridge(spl_abs, "abs_d_rating_1m",  base_feature_cols, "glmnet_ridge_abs1m")
+
+bind_rows(ridge_1m$metrics, ridge_3m$metrics, ridge_abs$metrics) |>
+  dplyr::arrange(rmse)
+
+# Example coefficient table (use whichever you want later)
+ridge_1m$coef |> dplyr::filter(term != "(Intercept)") |> dplyr::slice_head(n = 25)
+```
+
+```{r Progression Primary FE Models}
+# Phase 2 primary inferential models for player progression
+# Interpretation: within-player association between month-t covariates and future rating change
+
+fit_fe_model <- function(spl, ycol, xcols, label) {
+  fe_train <- spl$train |>
+    dplyr::select(player, month, month_date, all_of(c(ycol, xcols))) |>
+    tidyr::drop_na()
+
+  fe_test <- spl$test |>
+    dplyr::select(player, month, month_date, all_of(c(ycol, xcols))) |>
+    tidyr::drop_na()
+
+  fml_fe <- as.formula(paste0(
+    ycol, " ~ ",
+    paste(xcols, collapse = " + "),
+    " | player"
+  ))
+
+  # Phase 1 change: cluster by player in the inferential fit
+  m_fe <- fixest::feols(
+    fml_fe,
+    data = fe_train,
+    vcov = ~player
+  )
+
+  pred <- predict(m_fe, newdata = fe_test)
+
+  list(
+    model = m_fe,
+    metrics = tibble::tibble(
+      model = label,
+      n_train = nrow(fe_train),
+      n_test_raw = nrow(fe_test),
+      n_test_pred = sum(!is.na(pred)),
+      rmse = yardstick::rmse_vec(fe_test[[ycol]][!is.na(pred)], pred[!is.na(pred)]),
+      mae  = yardstick::mae_vec(fe_test[[ycol]][!is.na(pred)], pred[!is.na(pred)])
+    )
+  )
+}
+
+fe_1m  <- fit_fe_model(spl_1m,  "d_rating_1m",     base_feature_cols, "fixest_player_FE_1m")
+fe_3m  <- fit_fe_model(spl_3m,  "d_rating_3m",     base_feature_cols, "fixest_player_FE_3m")
+fe_abs <- fit_fe_model(spl_abs, "abs_d_rating_1m", base_feature_cols, "fixest_player_FE_abs1m")
+
+bind_rows(fe_1m$metrics, fe_3m$metrics, fe_abs$metrics) |>
+  dplyr::arrange(rmse)
+```
+
+```{r Progression Primary FE Results}
+cat("Primary inferential models for player progression\n\n")
+
+cat("1-month rating change\n")
+compare_fixest_vcovs(
+  fe_1m$model,
+  specs = list(
+    player_cluster = ~player,
+    two_way = ~player + month
+  )
+) |>
+  dplyr::arrange(term, vcov)
+
+cat("\n3-month rating change\n")
+compare_fixest_vcovs(
+  fe_3m$model,
+  specs = list(
+    player_cluster = ~player,
+    two_way = ~player + month
+  )
+) |>
+  dplyr::arrange(term, vcov)
+
+cat("\nAbsolute 1-month change\n")
+compare_fixest_vcovs(
+  fe_abs$model,
+  specs = list(
+    player_cluster = ~player,
+    two_way = ~player + month
+  )
+) |>
+  dplyr::arrange(term, vcov)
+```
+
+```{r Progression FE Primary Writeup}
+cat("Primary inferential writeup: 1-month FE model\n")
+
+broom::tidy(fe_1m$model, vcov = ~player + month) |>
+  dplyr::arrange(p.value)
+
+cat("\nModel fit summary\n")
+fe_1m$metrics
+```
+
+
+```{r Progression Predictive RF Benchmark}
+# Predictive benchmark only; not a primary inferential model
+
+fit_rf <- function(spl, ycol, xcols, label) {
+  tr <- spl$train |> dplyr::select(all_of(c(ycol, xcols))) |> tidyr::drop_na()
+  te <- spl$test  |> dplyr::select(all_of(c(ycol, xcols))) |> tidyr::drop_na()
+
+  rf_mod <- ranger::ranger(
+    reformulate(xcols, response = ycol),
+    data = tr,
+    num.trees = 500,
+    importance = "impurity"
+  )
+
+  pred <- predict(rf_mod, data = te)$predictions
+
+  list(
+    metrics = tibble::tibble(
+      model = label,
+      n_train = nrow(tr),
+      n_test  = nrow(te),
+      rmse = yardstick::rmse_vec(te[[ycol]], pred),
+      mae  = yardstick::mae_vec(te[[ycol]], pred)
+    ),
+    importance = sort(rf_mod$variable.importance, decreasing = TRUE)
+  )
+}
+
+rf_1m  <- fit_rf(spl_1m,  "d_rating_1m",     base_feature_cols, "ranger_rf_1m")
+rf_3m  <- fit_rf(spl_3m,  "d_rating_3m",     base_feature_cols, "ranger_rf_3m")
+rf_abs <- fit_rf(spl_abs, "abs_d_rating_1m", base_feature_cols, "ranger_rf_abs1m")
+
+bind_rows(rf_1m$metrics, rf_3m$metrics, rf_abs$metrics) |>
+  dplyr::arrange(rmse)
+
+# Example variable importance (pick one target)
+head(rf_1m$importance, 20)
+```
+
+
+```{r Progression Predictive Benchmark Comparison}
+# Phase 2:
+# this chunk compares predictive performance across model families.
+# It is not the primary inferential basis for player progression claims.
+
+# Gather metrics from the three families
+ridge_tbl <- bind_rows(ridge_1m$metrics, ridge_3m$metrics, ridge_abs$metrics)
+fe_tbl    <- bind_rows(fe_1m$metrics, fe_3m$metrics, fe_abs$metrics)
+rf_tbl    <- bind_rows(rf_1m$metrics, rf_3m$metrics, rf_abs$metrics)
+
+bind_rows(ridge_tbl, fe_tbl, rf_tbl) |>
+  dplyr::arrange(model)
+```
+
+```{r Progression Model Roles Summary}
+cat("
+Player Progression — Phase 2 model roles
+
+Primary inferential models:
+- fe_1m$model
+- fe_3m$model
+- fe_abs$model
+
+Predictive-only benchmark models:
+- ridge_1m, ridge_3m, ridge_abs
+- rf_1m, rf_3m, rf_abs
+")
+```
+
+
+##### Diagnostics
+
+```{r Progression Ridge Predictive Diagnostics}
+# Compare lambda.min vs lambda.1se performance (often a stability vs fit tradeoff)
+glmnet_compare_lambda <- function(fit_obj, spl, ycol, xcols) {
+  tr <- prep_xy(spl$train, ycol, xcols)
+  te <- prep_xy(spl$test,  ycol, xcols)
+
+  cv <- glmnet::cv.glmnet(tr$X, tr$y, alpha = 0.0)
+  pred_min <- as.numeric(predict(cv, newx = te$X, s = "lambda.min"))
+  pred_1se <- as.numeric(predict(cv, newx = te$X, s = "lambda.1se"))
+
+  tibble::tibble(
+    target = ycol,
+    rmse_min = yardstick::rmse_vec(te$y, pred_min),
+    rmse_1se = yardstick::rmse_vec(te$y, pred_1se),
+    mae_min  = yardstick::mae_vec(te$y, pred_min),
+    mae_1se  = yardstick::mae_vec(te$y, pred_1se)
+  )
+}
+
+glmnet_compare_lambda(NULL, spl_1m, "d_rating_1m", base_feature_cols)
+glmnet_compare_lambda(NULL, spl_3m, "d_rating_3m", base_feature_cols)
+glmnet_compare_lambda(NULL, spl_abs,"abs_d_rating_1m", base_feature_cols)
+
+# Residual distribution for ridge (1m)
+tr <- prep_xy(spl_1m$train, "d_rating_1m", base_feature_cols)
+te <- prep_xy(spl_1m$test,  "d_rating_1m", base_feature_cols)
+cv <- glmnet::cv.glmnet(tr$X, tr$y, alpha = 0.0)
+pred <- as.numeric(predict(cv, newx = te$X, s = "lambda.1se"))
+res <- te$y - pred
+ggplot(tibble::tibble(resid = res), aes(resid)) +
+  geom_histogram(bins = 80) +
+  labs(title = "GLMNET ridge residual distribution (1m)") +
+  theme_minimal()
+```
+
+```{r Progression FE Primary Diagnostics}
+# Primary inferential diagnostics for the FE progression models
+
+# 1) Coverage already computed
+fe_cov <- fe_1m$metrics |> dplyr::transmute(share_pred = n_test_pred / n_test_raw)
+fe_cov
+
+# 2) Sensitivity: add month fixed effects
+fe_train <- spl_1m$train |>
+  dplyr::select(player, month, d_rating_1m, all_of(base_feature_cols)) |>
+  tidyr::drop_na()
+
+fe_test  <- spl_1m$test |>
+  dplyr::select(player, month, d_rating_1m, all_of(base_feature_cols)) |>
+  tidyr::drop_na()
+
+m_fe_player <- fixest::feols(
+  as.formula(paste0("d_rating_1m ~ ", paste(base_feature_cols, collapse = " + "), " | player")),
+  data = fe_train,
+  vcov = ~player
+)
+
+m_fe_player_month <- fixest::feols(
+  as.formula(paste0("d_rating_1m ~ ", paste(base_feature_cols, collapse = " + "), " | player + month")),
+  data = fe_train,
+  vcov = ~player
+)
+
+pred1 <- predict(m_fe_player, newdata = fe_test)
+pred2 <- predict(m_fe_player_month, newdata = fe_test)
+
+tibble::tibble(
+  spec = c("player_FE", "player+month_FE"),
+  rmse = c(
+    yardstick::rmse_vec(fe_test$d_rating_1m[!is.na(pred1)], pred1[!is.na(pred1)]),
+    yardstick::rmse_vec(fe_test$d_rating_1m[!is.na(pred2)], pred2[!is.na(pred2)])
+  ),
+  n_pred = c(sum(!is.na(pred1)), sum(!is.na(pred2)))
+)
+
+# Phase 1 key comparison: player-clustered vs two-way clustered inference
+compare_fixest_vcovs(
+  fe_1m$model,
+  specs = list(
+    player_cluster = ~player,
+    two_way = ~player + month
+  )
+) |>
+  dplyr::arrange(term, vcov)
+```
+
+```{r Progression RF Predictive Diagnostics}
+# Simple stability check: refit RF with different seeds and compare RMSE + importance rank
+rf_stability <- function(seed) {
+  set.seed(seed)
+  tr <- spl_1m$train |> dplyr::select(d_rating_1m, all_of(base_feature_cols)) |> tidyr::drop_na()
+  te <- spl_1m$test  |> dplyr::select(d_rating_1m, all_of(base_feature_cols)) |> tidyr::drop_na()
+
+  mod <- ranger::ranger(d_rating_1m ~ ., data = tr, num.trees = 400, importance = "impurity")
+  pred <- predict(mod, data = te)$predictions
+  imp <- sort(mod$variable.importance, decreasing = TRUE)
+
+  tibble::tibble(seed = seed,
+                 rmse = yardstick::rmse_vec(te$d_rating_1m, pred),
+                 top1 = names(imp)[1],
+                 top2 = names(imp)[2])
+}
+
+rf_stab_tbl <- purrr::map_dfr(c(1,2,3,4,5), rf_stability)
+rf_stab_tbl
+```
+
+
+##### Summary
+
+```{r Progression Phase3 FE Helpers}
+# Phase 3 helper: FE fit with arbitrary RHS and FE structure
+
+fit_fe_spec <- function(spl, ycol, xcols, fe_rhs = "player", label = NULL) {
+  tr <- spl$train |>
+    dplyr::select(player, month, month_date, all_of(c(ycol, xcols))) |>
+    tidyr::drop_na()
+
+  te <- spl$test |>
+    dplyr::select(player, month, month_date, all_of(c(ycol, xcols))) |>
+    tidyr::drop_na()
+
+  fml <- as.formula(
+    paste0(ycol, " ~ ", paste(xcols, collapse = " + "), " | ", fe_rhs)
+  )
+
+  mod <- fixest::feols(
+    fml,
+    data = tr,
+    vcov = ~player
+  )
+
+  pred <- predict(mod, newdata = te)
+
+  list(
+    model = mod,
+    train = tr,
+    test = te,
+    metrics = tibble::tibble(
+      model = label %||% paste0(ycol, "_", fe_rhs),
+      n_train = nrow(tr),
+      n_test_raw = nrow(te),
+      n_test_pred = sum(!is.na(pred)),
+      rmse = yardstick::rmse_vec(te[[ycol]][!is.na(pred)], pred[!is.na(pred)]),
+      mae  = yardstick::mae_vec(te[[ycol]][!is.na(pred)], pred[!is.na(pred)])
+    )
+  )
+}
+
+prog_base_features <- base_feature_cols
+
+fe_1m_base_p3 <- fit_fe_spec(
+  spl = spl_1m,
+  ycol = "d_rating_1m",
+  xcols = prog_base_features,
+  fe_rhs = "player",
+  label = "fe_1m_base"
+)
+```
+
+
+```{r Progression Phase3 Feature Sets}
+# Phase 3: robustness to alternative feature sets
+
+# Time-use features that may be informative if available
+time_feature_candidates <- c(
+  "avg_time_spent_all",
+  "p90_time_spent_all",
+  "avg_clock_after_all",
+  "low_time_rate_all",
+  "avg_time_opening_all",
+  "avg_time_middlegame_all",
+  "avg_time_endgame_all"
+)
+
+# Expanded feature set = baseline + available time-use summaries
+prog_time_features <- union(
+  prog_base_features,
+  intersect(time_feature_candidates, names(pm_feat))
+)
+
+tibble::tibble(
+  feature_set = c("base", "base_plus_time"),
+  n_features = c(length(prog_base_features), length(prog_time_features))
+)
+```
+
+
+```{r Progression Phase3 Feature Robustness}
+# Phase 3: does the 1-month FE claim survive adding time-use features
+# on a COMMON SUPPORT sample?
+
+common_features <- union(prog_base_features, prog_time_features)
+
+spl_1m_common <- list(
+  train = spl_1m$train |>
+    dplyr::select(player, month, month_date, d_rating_1m, dplyr::all_of(common_features)) |>
+    tidyr::drop_na(),
+  test = spl_1m$test |>
+    dplyr::select(player, month, month_date, d_rating_1m, dplyr::all_of(common_features)) |>
+    tidyr::drop_na()
+)
+
+fe_1m_base_common_p3 <- fit_fe_spec(
+  spl = spl_1m_common,
+  ycol = "d_rating_1m",
+  xcols = prog_base_features,
+  fe_rhs = "player",
+  label = "fe_1m_base_common_support"
+)
+
+fe_1m_time_common_p3 <- fit_fe_spec(
+  spl = spl_1m_common,
+  ycol = "d_rating_1m",
+  xcols = prog_time_features,
+  fe_rhs = "player",
+  label = "fe_1m_base_plus_time_common_support"
+)
+
+bind_rows(
+  fe_1m_base_common_p3$metrics,
+  fe_1m_time_common_p3$metrics
+) |>
+  dplyr::arrange(rmse)
+```
+
+
+```{r Progression Phase3 Rating Robustness}
+# Phase 3: linear avg_rating vs spline avg_rating in the primary 1m FE model
+
+fit_fe_rating_spec <- function(spl, ycol, use_spline = FALSE, fe_rhs = "player", label = NULL) {
+  tr <- spl$train |>
+    dplyr::select(
+      player, month, month_date, dplyr::all_of(c(
+        ycol, setdiff(prog_base_features, "avg_rating"), "avg_rating"
+      ))
+    ) |>
+    tidyr::drop_na()
+
+  te <- spl$test |>
+    dplyr::select(
+      player, month, month_date, dplyr::all_of(c(
+        ycol, setdiff(prog_base_features, "avg_rating"), "avg_rating"
+      ))
+    ) |>
+    tidyr::drop_na()
+
+  other_rhs <- setdiff(prog_base_features, "avg_rating")
+
+  rating_term <- if (use_spline) {
+    "splines::ns(avg_rating, df = 4)"
+  } else {
+    "avg_rating"
+  }
+
+  rhs <- paste(c(rating_term, other_rhs), collapse = " + ")
+
+  fml <- as.formula(paste0(ycol, " ~ ", rhs, " | ", fe_rhs))
+
+  mod <- fixest::feols(
+    fml,
+    data = tr,
+    vcov = ~player
+  )
+
+  pred <- predict(mod, newdata = te)
+
+  list(
+    model = mod,
+    train = tr,
+    test = te,
+    metrics = tibble::tibble(
+      model = label,
+      n_train = nrow(tr),
+      n_test_raw = nrow(te),
+      n_test_pred = sum(!is.na(pred)),
+      rmse = yardstick::rmse_vec(te[[ycol]][!is.na(pred)], pred[!is.na(pred)]),
+      mae  = yardstick::mae_vec(te[[ycol]][!is.na(pred)], pred[!is.na(pred)])
+    )
+  )
+}
+
+fe_1m_linear_rating_p3 <- fit_fe_rating_spec(
+  spl = spl_1m,
+  ycol = "d_rating_1m",
+  use_spline = FALSE,
+  fe_rhs = "player",
+  label = "fe_1m_linear_rating"
+)
+
+fe_1m_spline_rating_p3 <- fit_fe_rating_spec(
+  spl = spl_1m,
+  ycol = "d_rating_1m",
+  use_spline = TRUE,
+  fe_rhs = "player",
+  label = "fe_1m_spline_rating"
+)
+
+bind_rows(
+  fe_1m_linear_rating_p3$metrics,
+  fe_1m_spline_rating_p3$metrics
+) |>
+  dplyr::arrange(rmse)
+```
+
+
+```{r Progression Phase3 FE Structure Robustness}
+# Phase 3: player FE vs player+month FE
+# Note: player+month FE is inferential sensitivity only, not a forecasting spec.
+
+fe_train_1m_p3 <- spl_1m$train |>
+  dplyr::select(player, month, month_date, d_rating_1m, dplyr::all_of(prog_base_features)) |>
+  tidyr::drop_na()
+
+m_fe_player_p3 <- fixest::feols(
+  as.formula(paste0("d_rating_1m ~ ", paste(prog_base_features, collapse = " + "), " | player")),
+  data = fe_train_1m_p3,
+  vcov = ~player
+)
+
+m_fe_player_month_p3 <- fixest::feols(
+  as.formula(paste0("d_rating_1m ~ ", paste(prog_base_features, collapse = " + "), " | player + month")),
+  data = fe_train_1m_p3,
+  vcov = ~player
+)
+
+tibble::tibble(
+  model = c("fe_1m_player_FE", "fe_1m_player_month_FE"),
+  n_train = c(nobs(m_fe_player_p3), nobs(m_fe_player_month_p3)),
+  r2_within = c(
+    as.numeric(fixest::fitstat(m_fe_player_p3, "wr2")),
+    as.numeric(fixest::fitstat(m_fe_player_month_p3, "wr2"))
+  )
+)
+```
+
+```{r Progression Phase3 FE Claim Agreement}
+# Compare key coefficients across the core FE robustness specs
+
+tidy_key_terms <- function(mod, vcov_spec = ~player + month) {
+  broom::tidy(mod, vcov = vcov_spec) |>
+    dplyr::filter(term %in% prog_base_features) |>
+    dplyr::mutate(
+      sign = dplyr::case_when(
+        estimate > 0 ~ "positive",
+        estimate < 0 ~ "negative",
+        TRUE ~ "zero"
+      )
+    ) |>
+    dplyr::select(term, estimate, p.value, sign)
+}
+
+prog_claim_agreement <- list(
+  base = tidy_key_terms(fe_1m_base_p3$model),
+  base_common_support = tidy_key_terms(fe_1m_base_common_p3$model),
+  plus_time_common_support = tidy_key_terms(fe_1m_time_common_p3$model),
+  spline_rating = tidy_key_terms(fe_1m_spline_rating_p3$model),
+  player_month_fe = tidy_key_terms(m_fe_player_month_p3)
+) |>
+  purrr::imap(~ dplyr::mutate(.x, spec = .y)) |>
+  dplyr::bind_rows() |>
+  tidyr::pivot_wider(
+    names_from = spec,
+    values_from = c(estimate, p.value, sign)
+  ) |>
+  dplyr::arrange(term)
+
+prog_claim_agreement
+```
+
+```{r Progression Phase3 Predictive Summary}
+# Phase 3: benchmark-model summary, still predictive-only
+
+prog_pred_summary <- bind_rows(
+  ridge_1m$metrics, ridge_3m$metrics, ridge_abs$metrics,
+  fe_1m$metrics, fe_3m$metrics, fe_abs$metrics,
+  rf_1m$metrics, rf_3m$metrics, rf_abs$metrics
+) |>
+  dplyr::mutate(
+    target = dplyr::case_when(
+      stringr::str_detect(model, "1m") & !stringr::str_detect(model, "abs") ~ "1m_change",
+      stringr::str_detect(model, "3m") ~ "3m_change",
+      stringr::str_detect(model, "abs") ~ "abs_1m_change",
+      TRUE ~ NA_character_
+    )
+  ) |>
+  dplyr::arrange(target, rmse)
+
+prog_pred_summary
+```
+
+```{r Progression Phase3 Predictive Variable Summary}
+# Predictive-only variable summaries for the 1m target
+
+ridge_1m_top <- ridge_1m$coef |>
+  dplyr::filter(term != "(Intercept)") |>
+  dplyr::slice_head(n = 10) |>
+  dplyr::transmute(
+    model = "ridge_1m",
+    term,
+    importance = abs_coef
+  )
+
+rf_1m_top <- tibble::tibble(
+  term = names(rf_1m$importance),
+  importance = as.numeric(rf_1m$importance)
+) |>
+  dplyr::slice_head(n = 10) |>
+  dplyr::mutate(model = "rf_1m", .before = 1)
+
+bind_rows(ridge_1m_top, rf_1m_top)
+```
+
+
+```{r Progression Phase3 Claim Summary}
+# Compact Phase 3 summary for paper extraction
+
+progression_phase3_claim_summary <- list(
+  fe_performance = bind_rows(
+    fe_1m_base_p3$metrics,
+    fe_1m_base_common_p3$metrics,
+    fe_1m_time_common_p3$metrics,
+    fe_1m_linear_rating_p3$metrics,
+    fe_1m_spline_rating_p3$metrics
+  ),
+  fe_structure_sensitivity = tibble::tibble(
+    model = c("fe_1m_player_FE", "fe_1m_player_month_FE"),
+    n_train = c(nobs(m_fe_player_p3), nobs(m_fe_player_month_p3)),
+    wr2 = c(
+      as.numeric(fixest::fitstat(m_fe_player_p3, "wr2")),
+      as.numeric(fixest::fitstat(m_fe_player_month_p3, "wr2"))
+    )
+  ),
+  fe_claim_agreement = prog_claim_agreement,
+  predictive_summary = prog_pred_summary,
+  predictive_variables_1m = bind_rows(ridge_1m_top, rf_1m_top)
+)
+
+progression_phase3_claim_summary$fe_performance
+progression_phase3_claim_summary$fe_structure_sensitivity
+progression_phase3_claim_summary$fe_claim_agreement
+progression_phase3_claim_summary$predictive_summary
+progression_phase3_claim_summary$predictive_variables_1m
+```
+
+
+#### Player Categorization
+
+Phase 2 / Phase 3 roles for Player Categorization:
+
+Primary descriptive clustering specification:
+- k-means on standardized core + repertoire features
+- `k_choose = 6`
+- object: `cat_core_km`
+
+Supporting representations / alternative clustering algorithms:
+- `pca`
+- `um`
+- `hc`
+- `gmm`
+
+Phase 3 robustness goals:
+- feature-set robustness
+- algorithm robustness
+- initialization stability
+- month-to-month stability
+- profile interpretability
+
+```{r Categorization Prep}
+# ---- Settings ----
+rating_bin_width <- 200   # keep consistent with earlier sections/EDA
+min_games_pm_tc  <- 10    # reliability filter for pm_tc rows
+min_open_games   <- 10    # reliability filter for repertoire summaries (per player-month-tc)
+min_moves_ptm    <- 40    # used ONLY for overlay profiling, not for clustering inclusion
+
+# ---- Base: player-month-tc outcomes (high coverage) ----
+pmc <- pm_tc |>
+  dplyr::filter(
+    !is.na(player), !is.na(month), !is.na(tc_bucket),
+    !is.na(avg_rating), !is.na(games)
+  ) |>
+  dplyr::mutate(
+    month_date = lubridate::ymd(paste0(month, "-01")),
+    t = as.integer(dplyr::dense_rank(month_date)),
+    rating_bin = as.integer(floor(avg_rating / rating_bin_width) * rating_bin_width)
+  ) |>
+  dplyr::filter(games >= min_games_pm_tc)
+
+# ---- Repertoire features from player-opening-month-tc (pom_tc) ----
+# We compute:
+#   - open_games_total: total opening-tagged games for that player-month-tc
+#   - top_opening_share_tc: concentration in most-played opening
+#   - switched_opening_tc: did top opening change vs previous month (within tc_bucket)
+pom_clean <- pom_tc |>
+  dplyr::filter(
+    !is.na(player), !is.na(month), !is.na(tc_bucket),
+    !is.na(opening), !is.na(games)
+  ) |>
+  dplyr::mutate(
+    month_date = lubridate::ymd(paste0(month, "-01"))
+  )
+
+# total opening games per player-month-tc
+pom_tot <- pom_clean |>
+  dplyr::group_by(player, month, tc_bucket) |>
+  dplyr::summarise(open_games_total = sum(games, na.rm = TRUE), .groups = "drop")
+
+# top opening share per player-month-tc
+pom_top_share <- pom_clean |>
+  dplyr::group_by(player, month, tc_bucket) |>
+  dplyr::summarise(
+    top_opening_share_tc = max(games, na.rm = TRUE) / sum(games, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# top opening name (for switching)
+pom_top_name <- pom_clean |>
+  dplyr::group_by(player, month, tc_bucket) |>
+  dplyr::slice_max(order_by = games, n = 1, with_ties = FALSE) |>
+  dplyr::ungroup() |>
+  dplyr::select(player, month, tc_bucket, top_opening_name_tc = opening) |>
+  dplyr::mutate(month_date = lubridate::ymd(paste0(month, "-01"))) |>
+  dplyr::arrange(player, tc_bucket, month_date) |>
+  dplyr::group_by(player, tc_bucket) |>
+  dplyr::mutate(
+    prev_top_opening_tc = dplyr::lag(top_opening_name_tc),
+    switched_opening_tc = dplyr::if_else(
+      !is.na(prev_top_opening_tc) & top_opening_name_tc != prev_top_opening_tc,
+      1L, 0L
+    )
+  ) |>
+  dplyr::ungroup() |>
+  dplyr::select(player, month, tc_bucket, switched_opening_tc)
+
+rep_feat <- pom_tot |>
+  dplyr::left_join(pom_top_share, by = c("player","month","tc_bucket")) |>
+  dplyr::left_join(pom_top_name,  by = c("player","month","tc_bucket")) |>
+  dplyr::filter(open_games_total >= min_open_games)
+
+# ---- Core categorization table (this is what clustering uses) ----
+# IMPORTANT: we DO NOT require time-use features here.
+# Use left_join so we keep pmc even if repertoire features are missing;
+# then you can decide whether to drop NAs in specific features downstream.
+cat_tbl <- pmc |>
+  dplyr::left_join(rep_feat, by = c("player","month","tc_bucket"))
+
+# ---- Optional time-use overlay table (for profiling AFTER clustering) ----
+# Collapse player_time_month_tc is already at player-month-tc, but we filter for stability.
+ptm_overlay <- ptm_tc |>
+  dplyr::filter(
+    !is.na(player), !is.na(month), !is.na(tc_bucket),
+    !is.na(move_rows),
+    move_rows >= min_moves_ptm
+  ) |>
+  dplyr::select(
+    player, month, tc_bucket, move_rows,
+    avg_time_spent, median_time_spent, p90_time_spent,
+    avg_clock_after, low_time_rate,
+    avg_time_opening, avg_time_middlegame, avg_time_endgame
+  )
+
+cat_tbl_time_overlay <- cat_tbl |>
+  dplyr::left_join(ptm_overlay, by = c("player","month","tc_bucket"))
+
+# ---- Sanity checks (mirrors your earlier diagnostics) ----
+cat_sanity <- cat_tbl |>
+  dplyr::summarise(
+    n = dplyr::n(),
+    n_players = dplyr::n_distinct(player),
+    n_months = dplyr::n_distinct(month),
+    tc_levels = dplyr::n_distinct(tc_bucket),
+    frac_with_rep = mean(!is.na(top_opening_share_tc)),
+    .groups = "drop"
+  )
+
+cat_sanity
+
+# How many rows *also* have time-use available (for profiling only)?
+time_cover <- cat_tbl_time_overlay |>
+  dplyr::summarise(
+    n = dplyr::n(),
+    frac_with_time = mean(!is.na(avg_time_spent)),
+    .groups = "drop"
+  )
+
+time_cover
+```
+
+```{r Player Categorization Core Features}
+# ---- Choose features (NO time-use) ----
+# Outcome / performance / context
+core_vars <- c(
+  "avg_rating", "avg_rating_diff", "avg_moves",
+  "win_rate", "draw_rate",
+  "games", "opening_diversity"
+)
+
+# Repertoire proxies (from prep join)
+rep_vars <- c(
+  "top_opening_share_tc", "switched_opening_tc", "open_games_total"
+)
+
+use_vars <- intersect(c(core_vars, rep_vars), names(cat_tbl))
+
+# Keep a modeling frame (drop only rows missing chosen vars)
+cat_core <- cat_tbl |>
+  dplyr::select(player, month, month_date, t, tc_bucket, rating_bin, dplyr::all_of(use_vars)) |>
+  tidyr::drop_na()
+
+# Optional: stabilize heavy-tailed counts
+cat_core <- cat_core |>
+  dplyr::mutate(
+    log_games = log1p(games),
+    log_open_games = if ("open_games_total" %in% names(cat_core)) log1p(open_games_total) else NA_real_
+  )
+
+# Update feature list (swap in logs instead of raw counts)
+feature_cols <- setdiff(use_vars, c("games", "open_games_total"))
+feature_cols <- c(
+  feature_cols,
+  "log_games",
+  if ("open_games_total" %in% use_vars) "log_open_games" else NULL
+)
+
+feature_cols <- intersect(feature_cols, names(cat_core))
+
+# Matrix for modeling
+X_raw <- cat_core |>
+  dplyr::select(dplyr::all_of(feature_cols))
+
+# Standardize (z-scores)
+X_scaled <- scale(as.matrix(X_raw))
+
+dim(cat_core)
+length(feature_cols)
+```
+
+```{r Player Categorization PCA}
+pca <- prcomp(X_scaled, center = FALSE, scale. = FALSE)
+
+# Variance explained
+pve <- (pca$sdev^2) / sum(pca$sdev^2)
+
+pve_tbl <- tibble::tibble(
+  pc = paste0("PC", seq_along(pve)),
+  pve = pve,
+  cum_pve = cumsum(pve)
+)
+
+pve_tbl |> dplyr::slice(1:10)
+
+# Loadings (which features define PCs)
+loadings <- as.data.frame(pca$rotation) |>
+  tibble::rownames_to_column("feature")
+
+# Top contributors to first few PCs
+top_loadings <- loadings |>
+  tidyr::pivot_longer(-feature, names_to = "pc", values_to = "loading") |>
+  dplyr::filter(pc %in% c("PC1","PC2","PC3")) |>
+  dplyr::mutate(abs_loading = abs(loading)) |>
+  dplyr::arrange(pc, dplyr::desc(abs_loading)) |>
+  dplyr::group_by(pc) |>
+  dplyr::slice_head(n = 10) |>
+  dplyr::ungroup()
+
+top_loadings
+```
+
+
+```{r Player Categorization PCA Scatter}
+# Add PCA scores
+scores <- as.data.frame(pca$x[, 1:3, drop = FALSE]) |>
+  dplyr::mutate(row_id = dplyr::row_number())
+
+cat_plot <- cat_core |>
+  dplyr::mutate(row_id = dplyr::row_number()) |>
+  dplyr::left_join(scores, by = "row_id")
+
+ggplot(cat_plot, aes(x = PC1, y = PC2)) +
+  geom_point(alpha = 0.15) +
+  facet_wrap(~tc_bucket) +
+  labs(title = "PCA projection of player-month-tc behavior (no time-use)",
+       subtitle = "Each point is a player-month-tc observation; features standardized",
+       x = "PC1", y = "PC2") +
+  theme_minimal()
+```
+
+```{r Player Categorization UMAP}
+set.seed(100)
+
+um <- uwot::umap(
+  X_scaled,
+  n_neighbors = 30,
+  min_dist = 0.15,
+  metric = "euclidean",
+  verbose = TRUE
+)
+
+um_df <- tibble::tibble(
+  UMAP1 = um[,1],
+  UMAP2 = um[,2]
+) |>
+  dplyr::bind_cols(cat_core |> dplyr::select(player, month, tc_bucket, rating_bin))
+
+# UMAP plots can look more convincing than they actually are; better for exploration than they are proof.
+ggplot(um_df, aes(x = UMAP1, y = UMAP2)) +
+  geom_point(alpha = 0.12) +
+  facet_wrap(~tc_bucket) +
+  labs(title = "UMAP projection of player-month-tc behavior (no time-use)") +
+  theme_minimal()
+```
+
+```{r Player Categorization Primary KMeans}
+set.seed(100)
+
+k_grid <- 2:10
+
+# Fit KMeans_rcpp across a grid of k
+km_fits <- map(k_grid, ~ ClusterR::KMeans_rcpp(
+  X_scaled,
+  clusters = .x,
+  num_init = 50,
+  max_iters = 100,
+  initializer = "kmeans++"
+))
+
+# Elbow diagnostic
+wss <- map_dbl(km_fits, ~ sum(.x$withinss))
+wss_tbl <- tibble::tibble(k = k_grid, tot_withinss = wss)
+
+ggplot(wss_tbl, aes(x = k, y = tot_withinss)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Primary clustering spec: k-means elbow curve", x = "k", y = "Total within-cluster SS") +
+  theme_minimal()
+
+# Primary descriptive clustering choice
+k_choose <- 6
+km <- km_fits[[which(k_grid == k_choose)]]
+
+cat_core_km <- cat_core |>
+  dplyr::mutate(cluster_km = factor(km$clusters))
+
+um_km <- um_df |>
+  dplyr::mutate(cluster_km = cat_core_km$cluster_km)
+
+ggplot(um_km, aes(UMAP1, UMAP2, color = cluster_km)) +
+  geom_point(alpha = 0.25) +
+  facet_wrap(~tc_bucket) +
+  labs(
+    title = paste0("Primary clustering spec: k-means clusters (k = ", k_choose, ")"),
+    subtitle = "Primary descriptive solution used for profiling and robustness checks"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+```{r Player Categorization HClust}
+# Sample if needed (hierarchical is O(n^2))
+set.seed(100)
+n_hc <- 5000
+idx_hc <- if (nrow(X_scaled) > n_hc) sample(seq_len(nrow(X_scaled)), n_hc) else seq_len(nrow(X_scaled))
+
+X_h <- X_scaled[idx_hc, , drop = FALSE]
+
+# Distance + linkage
+d <- dist(X_h)
+hc <- hclust(d, method = "ward.D2")
+
+plot(hc, labels = FALSE, main = "Hierarchical clustering dendrogram (sampled)")
+
+# Cut into k clusters (use same k for comparability)
+hc_k <- cutree(hc, k = k_choose)
+
+hc_df <- um_df[idx_hc, ] |>
+  dplyr::mutate(cluster_hc = factor(hc_k))
+
+ggplot(hc_df, aes(UMAP1, UMAP2, color = cluster_hc)) +
+  geom_point(alpha = 0.25) +
+  facet_wrap(~tc_bucket) +
+  labs(title = paste0("UMAP colored by hierarchical clusters (k = ", k_choose, ", sampled)")) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+```{r Player Categorization GMM}
+# GMM can be heavy; optionally sample
+set.seed(100)
+n_gmm <- 15000
+idx_gmm <- if (nrow(X_scaled) > n_gmm) sample(seq_len(nrow(X_scaled)), n_gmm) else seq_len(nrow(X_scaled))
+
+X_g <- X_scaled[idx_gmm, , drop = FALSE]
+
+gmm <- mclust::Mclust(X_g, G = 2:10, verbose = FALSE)
+
+summary(gmm)
+
+# BIC plot to choose number of components
+plot(gmm, what = "BIC")
+
+gmm_df <- um_df[idx_gmm, ] |>
+  dplyr::mutate(cluster_gmm = factor(gmm$classification))
+
+ggplot(gmm_df, aes(UMAP1, UMAP2, color = cluster_gmm)) +
+  geom_point(alpha = 0.25) +
+  facet_wrap(~tc_bucket) +
+  labs(title = "UMAP colored by GMM clusters (sampled)") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+```{r Player Categorization Primary Profiles}
+# Primary descriptive cluster profiles
+prof_km <- cat_core_km |>
+  dplyr::group_by(cluster_km) |>
+  dplyr::summarise(
+    n = dplyr::n(),
+    share = n / nrow(cat_core_km),
+    dplyr::across(dplyr::all_of(feature_cols), ~ mean(.x, na.rm = TRUE)),
+    .groups = "drop"
+  ) |>
+  dplyr::arrange(dplyr::desc(n))
+
+prof_km
+
+cluster_mix <- cat_core_km |>
+  dplyr::count(tc_bucket, cluster_km) |>
+  dplyr::group_by(tc_bucket) |>
+  dplyr::mutate(share = n / sum(n)) |>
+  dplyr::ungroup()
+
+ggplot(cluster_mix, aes(x = cluster_km, y = share, fill = tc_bucket)) +
+  geom_col(position = "dodge") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    title = "Primary clustering spec: cluster prevalence by time control",
+    x = "Cluster",
+    y = "Share of observations"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+```{r Player Categorization Stability Jaccard}
+# For stability, compare cluster assignments for the SAME player/tc across consecutive months.
+
+# Ensure ordering
+clust_assign <- cat_core_km |>
+  dplyr::select(player, tc_bucket, month, month_date, cluster_km) |>
+  dplyr::arrange(player, tc_bucket, month_date)
+
+# Build consecutive-month pairs per player/tc
+pairs <- clust_assign |>
+  dplyr::group_by(player, tc_bucket) |>
+  dplyr::mutate(
+    next_month      = dplyr::lead(month),
+    next_month_date = dplyr::lead(month_date),
+    next_cluster    = dplyr::lead(cluster_km),
+    # consecutive month check: difference in months == 1
+    month_index     = lubridate::year(month_date) * 12L + lubridate::month(month_date),
+    next_month_index= lubridate::year(next_month_date) * 12L + lubridate::month(next_month_date)
+  ) |>
+  dplyr::ungroup() |>
+  dplyr::filter(
+    !is.na(next_month_date),
+    (next_month_index - month_index) == 1L
+  ) |>
+  dplyr::select(-month_index, -next_month_index)
+
+# Month-level stability: share unchanged
+stability_month <- pairs |>
+  dplyr::group_by(tc_bucket, month) |>
+  dplyr::summarise(
+    n_pairs = dplyr::n(),
+    frac_same_cluster = mean(cluster_km == next_cluster),
+    .groups = "drop"
+  )
+
+ggplot(stability_month, aes(x = month, y = frac_same_cluster, color = tc_bucket, group = tc_bucket)) +
+  geom_line() +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(title = "Month-to-month stability of profile assignments",
+     x = "Month",
+     y = "Share with same profile next month"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        legend.position = "bottom")
+
+stability_month |>
+  dplyr::arrange(tc_bucket, month) |>
+  dplyr::slice_head(n = 10)
+```
+
+##### Diagnostics
+
+```{r Categorization KMeans Diagnostics}
+# Silhouette for chosen k (uses scaled space)
+# Note: silhouette needs a distance; sample if too large.
+set.seed(100)
+n_sil <- 8000
+idx_sil <- if (nrow(X_scaled) > n_sil) sample(seq_len(nrow(X_scaled)), n_sil) else seq_len(nrow(X_scaled))
+X_s <- X_scaled[idx_sil, , drop = FALSE]
+cl_s <- as.integer(cat_core_km$cluster_km[idx_sil])
+
+d <- dist(X_s)
+sil <- cluster::silhouette(cl_s, d)
+
+summary(sil[, "sil_width"])
+plot(sil, main = paste0("Silhouette plot (k = ", k_choose, ", sampled)"), border = NA)
+```
+
+```{r Categorization KMeans Init Stability}
+# Refit same k multiple times and measure agreement via adjusted Rand index (ARI)
+# (ARI in mclust)
+set.seed(100)
+n_rep <- 10
+km_reps <- purrr::map(1:n_rep, ~ ClusterR::KMeans_rcpp(
+  X_scaled,
+  clusters = k_choose,
+  num_init = 10,
+  max_iters = 100,
+  initializer = "kmeans++"
+))
+
+# Compare to first run
+base_lab <- km_reps[[1]]$clusters
+ari_tbl <- purrr::map_dfr(1:n_rep, function(i) {
+  lab <- km_reps[[i]]$clusters
+  tibble::tibble(rep = i, ARI = mclust::adjustedRandIndex(base_lab, lab))
+})
+
+ari_tbl
+ggplot(ari_tbl, aes(x = rep, y = ARI)) + geom_line(aes(group=1)) + geom_point() +
+  labs(title = "K-means initialization stability (ARI)", x = "replicate", y = "ARI vs first run") +
+  theme_minimal()
+```
+
+
+```{r Categorization Month-to-Month ARI}
+# Stronger than "same label": compares clusterings between consecutive months using ARI on overlapping players.
+# Works only if you have enough overlap.
+
+assign <- cat_core_km |>
+  dplyr::select(player, tc_bucket, month, month_date, cluster_km) |>
+  dplyr::mutate(month_index = lubridate::year(month_date) * 12L + lubridate::month(month_date))
+
+# Build consecutive month pairs by tc_bucket
+ari_month <- assign |>
+  dplyr::inner_join(
+    assign |> dplyr::transmute(player, tc_bucket, month_index = month_index - 1L, cluster_prev = cluster_km),
+    by = c("player","tc_bucket","month_index")
+  ) |>
+  dplyr::group_by(tc_bucket, month_index) |>
+  dplyr::summarise(
+    n_overlap = dplyr::n(),
+    ari = mclust::adjustedRandIndex(as.integer(cluster_prev), as.integer(cluster_km)),
+    .groups = "drop"
+  )
+
+ari_month |> head(12)
+
+ggplot(ari_month, aes(x = month_index, y = ari, color = tc_bucket, group = tc_bucket)) +
+  geom_line() +
+  geom_point(size = 1) +
+  labs(title = "Month-to-month clustering stability (ARI on overlapping players)",
+       x = "Month index", y = "ARI") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+
+##### Summary
+
+```{r Categorization Phase3 Helpers}
+# ---- Phase 3 helpers for descriptive robustness ----
+
+make_cat_design <- function(data, vars_core, vars_rep = NULL) {
+  use_vars_local <- intersect(c(vars_core, vars_rep), names(data))
+
+  out <- data |>
+    dplyr::select(player, month, month_date, t, tc_bucket, rating_bin, dplyr::all_of(use_vars_local)) |>
+    tidyr::drop_na()
+
+  out <- out |>
+    dplyr::mutate(
+      log_games = if ("games" %in% names(out)) log1p(games) else NA_real_,
+      log_open_games = if ("open_games_total" %in% names(out)) log1p(open_games_total) else NA_real_
+    )
+
+  feature_cols_local <- setdiff(use_vars_local, c("games", "open_games_total"))
+  if ("games" %in% use_vars_local) feature_cols_local <- c(feature_cols_local, "log_games")
+  if ("open_games_total" %in% use_vars_local) feature_cols_local <- c(feature_cols_local, "log_open_games")
+
+  feature_cols_local <- intersect(feature_cols_local, names(out))
+
+  X_raw_local <- out |>
+    dplyr::select(dplyr::all_of(feature_cols_local))
+
+  X_scaled_local <- scale(as.matrix(X_raw_local))
+
+  list(
+    data = out,
+    feature_cols = feature_cols_local,
+    X_scaled = X_scaled_local
+  )
+}
+
+fit_kmeans_spec <- function(X_scaled, k, seed = 100) {
+  set.seed(seed)
+  ClusterR::KMeans_rcpp(
+    X_scaled,
+    clusters = k,
+    num_init = 50,
+    max_iters = 100,
+    initializer = "kmeans++"
+  )
+}
+
+cluster_profile_tbl <- function(data, cluster_var, feature_cols) {
+  data |>
+    dplyr::group_by(.data[[cluster_var]]) |>
+    dplyr::summarise(
+      n = dplyr::n(),
+      share = n / nrow(data),
+      dplyr::across(dplyr::all_of(feature_cols), ~ mean(.x, na.rm = TRUE)),
+      .groups = "drop"
+    ) |>
+    dplyr::arrange(dplyr::desc(n))
+}
+```
+
+```{r Categorization Phase3 Feature-Set Robustness}
+# Phase 3: does the broad player-type structure survive feature-set changes?
+
+core_only_vars <- core_vars
+core_rep_vars  <- c(core_vars, rep_vars)
+
+spec_core_only <- make_cat_design(cat_tbl, vars_core = core_only_vars)
+spec_core_rep  <- make_cat_design(cat_tbl, vars_core = core_vars, vars_rep = rep_vars)
+
+km_core_only <- fit_kmeans_spec(spec_core_only$X_scaled, k = k_choose, seed = 100)
+km_core_rep  <- fit_kmeans_spec(spec_core_rep$X_scaled,  k = k_choose, seed = 100)
+
+cat_core_only_km <- spec_core_only$data |>
+  dplyr::mutate(cluster_km = factor(km_core_only$clusters))
+
+cat_core_rep_km <- spec_core_rep$data |>
+  dplyr::mutate(cluster_km = factor(km_core_rep$clusters))
+
+feature_robust_tbl <- tibble::tibble(
+  feature_set = c("core_only", "core_plus_repertoire"),
+  n_obs = c(nrow(spec_core_only$data), nrow(spec_core_rep$data)),
+  n_features = c(length(spec_core_only$feature_cols), length(spec_core_rep$feature_cols)),
+  min_cluster_share = c(
+    min(prop.table(table(cat_core_only_km$cluster_km))),
+    min(prop.table(table(cat_core_rep_km$cluster_km)))
+  )
+)
+
+feature_robust_tbl
+
+prof_core_only <- cluster_profile_tbl(cat_core_only_km, "cluster_km", spec_core_only$feature_cols) |>
+  dplyr::mutate(feature_set = "core_only", .before = 1)
+
+prof_core_rep <- cluster_profile_tbl(cat_core_rep_km, "cluster_km", spec_core_rep$feature_cols) |>
+  dplyr::mutate(feature_set = "core_plus_repertoire", .before = 1)
+
+prof_core_only
+prof_core_rep
+```
+
+```{r Categorization Phase3 Algorithm Robustness}
+# Phase 3: do alternative algorithms recover similar broad structure?
+
+# k-means assignments on full primary data
+km_assign <- cat_core_km |>
+  dplyr::mutate(row_id = dplyr::row_number()) |>
+  dplyr::select(row_id, cluster_km)
+
+# hierarchical assignments only on sampled rows
+hc_assign <- tibble::tibble(
+  row_id = idx_hc,
+  cluster_hc = factor(hc_k)
+)
+
+# GMM assignments only on sampled rows
+gmm_assign <- tibble::tibble(
+  row_id = idx_gmm,
+  cluster_gmm = factor(gmm$classification)
+)
+
+alg_agree_hc <- km_assign |>
+  dplyr::inner_join(hc_assign, by = "row_id") |>
+  dplyr::summarise(
+    n_overlap = dplyr::n(),
+    ari = mclust::adjustedRandIndex(as.integer(cluster_km), as.integer(cluster_hc))
+  ) |>
+  dplyr::mutate(comparison = "kmeans_vs_hclust", .before = 1)
+
+alg_agree_gmm <- km_assign |>
+  dplyr::inner_join(gmm_assign, by = "row_id") |>
+  dplyr::summarise(
+    n_overlap = dplyr::n(),
+    ari = mclust::adjustedRandIndex(as.integer(cluster_km), as.integer(cluster_gmm))
+  ) |>
+  dplyr::mutate(comparison = "kmeans_vs_gmm", .before = 1)
+
+alg_agreement_tbl <- dplyr::bind_rows(alg_agree_hc, alg_agree_gmm)
+alg_agreement_tbl
+```
+
+```{r Categorization Phase3 Stability Summary}
+# Consolidate the main descriptive stability checks for the primary clustering solution
+
+sil_summary <- tibble::tibble(
+  metric = c("mean_silhouette", "median_silhouette"),
+  value = c(
+    mean(sil[, "sil_width"], na.rm = TRUE),
+    median(sil[, "sil_width"], na.rm = TRUE)
+  )
+)
+
+init_stability_summary <- ari_tbl |>
+  dplyr::summarise(
+    mean_init_ari = mean(ARI, na.rm = TRUE),
+    min_init_ari = min(ARI, na.rm = TRUE),
+    max_init_ari = max(ARI, na.rm = TRUE)
+  )
+
+month_stability_summary <- ari_month |>
+  dplyr::summarise(
+    mean_month_ari = mean(ari, na.rm = TRUE),
+    median_month_ari = median(ari, na.rm = TRUE),
+    min_month_ari = min(ari, na.rm = TRUE)
+  )
+
+cluster_size_summary <- cat_core_km |>
+  dplyr::count(cluster_km) |>
+  dplyr::mutate(share = n / sum(n)) |>
+  dplyr::summarise(
+    n_clusters = dplyr::n(),
+    min_cluster_share = min(share),
+    max_cluster_share = max(share)
+  )
+
+cat_phase3_stability <- dplyr::bind_cols(
+  init_stability_summary,
+  month_stability_summary,
+  cluster_size_summary
+)
+
+sil_summary
+cat_phase3_stability
+```
+
+
+```{r Categorization Phase3 Claim Summary}
+# Paper-ready descriptive summary for retained clustering solution
+
+cat_claim_summary <- list(
+  primary_spec = tibble::tibble(
+    item = c("algorithm", "k", "feature_set", "n_obs"),
+    value = c(
+      "kmeans",
+      as.character(k_choose),
+      "core_plus_repertoire",
+      as.character(nrow(cat_core_km))
+    )
+  ),
+
+  primary_cluster_sizes = cat_core_km |>
+    dplyr::count(cluster_km) |>
+    dplyr::mutate(share = n / sum(n)) |>
+    dplyr::arrange(dplyr::desc(n)),
+
+  primary_profiles = prof_km,
+
+  feature_robustness = feature_robust_tbl,
+
+  algorithm_agreement = alg_agreement_tbl,
+
+  stability = cat_phase3_stability
+)
+
+cat_claim_summary$primary_spec
+cat_claim_summary$primary_cluster_sizes
+cat_claim_summary$feature_robustness
+cat_claim_summary$algorithm_agreement
+cat_claim_summary$stability
+```
+
+```{r Categorization Model Roles Summary}
+cat("
+Player Categorization — Phase 3 roles
+
+Primary descriptive clustering solution:
+- cat_core_km
+- k-means with k = 6
+- standardized core + repertoire features
+
+Phase 3 robustness checks:
+- feature-set robustness
+- algorithm agreement (k-means vs hierarchical vs GMM)
+- initialization stability
+- month-to-month stability
+
+Interpretation rule:
+- describe only cluster patterns that are reasonably stable across these checks
+- treat unstable or tiny clusters as exploratory
+")
+
+cat("
+Player Categorization — Phase 3 summary
+
+Primary descriptive segmentation:
+- k-means on core_plus_repertoire features
+- k = 6
+
+Robustness checks:
+- feature-set robustness: core_only vs core_plus_repertoire
+- algorithm robustness: k-means vs hierarchical vs GMM
+- stability: silhouette, initialization ARI, month-to-month ARI
+
+Interpretation:
+- descriptive behavioral profiles, not inferential latent classes
+")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
