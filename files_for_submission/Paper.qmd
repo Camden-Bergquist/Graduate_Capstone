@@ -2,6 +2,8 @@
 title: "Project Title (Placeholder)"
 author: "Camden Bergquist"
 date: "Last compiled on `r format(Sys.time(), '%B %d, %Y')`"
+abstract: >
+  Lorem Ipsum.
 number-sections: true
 format:
   jasa-pdf:
@@ -22,6 +24,7 @@ format:
         \usepackage{ragged2e}
         \newcolumntype{T}[1]{>{\RaggedRight\ttfamily\arraybackslash}p{#1}}
         \newcommand{\us}{\_\allowbreak}
+        \setlength{\parindent}{2em}
 bibliography: references.bib
 execute:
   echo: FALSE
@@ -65,12 +68,14 @@ qpath <- function(p) paste0("'", gsub("'", "''", normalizePath(p, winslash="/", 
 
 ```
 
-
+<!--
 
 Make sure every code chunk has echo=FALSE in its preamble unless you need to highlight the code for some reason in the paper.
 
 ## Abstract
 Complete this after all other sections have been completed.
+
+-->
 
 \newpage
 
@@ -96,14 +101,16 @@ Finally, there is an emerging interest in identifying player styles or archetype
 
 Taken together, existing work suggests that large-scale online chess datasets support three relevant kinds of analysis: (1) descriptive metagame analysis of strategic choices across populations, (2) modeling how constraints like time pressure affect behavior and outcomes, and (3) data-driven characterization of player types and their evolution [@chowdhary2023performance; @russek2025thinking; @demarzo2023openings; @mcilroyyoung2021stylometry]. This project intends to build on those themes by using Lichess data to analyze modern opening/style patterns and connect them to measures of player performance and development over time.
 
-
+<!--
 \newpage
+-->
 
 ## The Data {#sec-data}
 
 ### Source {#sec-source}
+<!--
 Describe where this data comes from, why it was collected, who collected it, and how it was collected. A Citation may be useful here.
-
+-->
 Lichess is the largest open-source chess server is the world, and releases free, monthly exports of their game data under the Creative Commons CCO license [@lichessDatabase]. The site requires a log of the game data in order to function while a game is being played, but holds onto it after the fact to allow users to analyze their games after playing them. Though Lichess offers a powerful API, I elected to download data directly from their website in `.pgn.zst` format. The PGN (portable game notation) format is a plaintext format for chess games, containing moves, headers like players, date, and event, and even optional annotation. The `.zst` file extension (sometimes also written as `zstd`) represents Zstandard compression, which is a modern compressor similar to gzip or xz that's commonly used because it's fast and compresses well; think of it as a variation on a ZIP or RAR file. Zstandard compression can be expected to shrink PGN files by 5 times on its faster, less-efficient settings, and even more on it's slower ones.
 
 For the purposes of this project, I downloaded 24 months of data spanning from January 2024 to December 2025, amounting to 677 gigabytes of raw data when compressed. Obviously, nearly 700 gigabytes of compressed data – 3~4 terabytes of uncompressed PGN data – is an insane amount to try to work with, capstone project or not. I have a powerful home computer, but that kind of scale requires something closer to a high-end server than a personal computer; it won't fly. Instead of tackling the problem head-on, I constructed a hybrid R/Python pipeline that downloads the data, deterministically samples and parses it into small chunks (in the form of parquet files), and then builds a selection of smaller, ready-for-analysis datasets from those chunks. Individually, no one dataset has the 20+ variables required in the project outline, but since I've built multiple datasets for multiple different types of analysis, they collectively meet that benchmark 
@@ -459,6 +466,9 @@ Each derived dataset is organized at a different unit of analysis (e.g., player-
 
 Together, these observation types support longitudinal player performance modeling (`pm`, `pm_tc`), repertoire/style measurement from opening choice (`pom_tc`), metagame dynamics via opening adoption and outcomes (`mom_tc`), and bounded-rationality/time-management analyses using move-time features (`ptm_tc`).
 
+<!--
+\newpage
+-->
 
 ### Cleaning
 
@@ -1068,7 +1078,9 @@ ggplot(div_strata, aes(x=opening_diversity, y=mean_d, color=games_bin)) +
 ```
 
 
+<!--
 \newpage
+-->
 
 
 ## Methodology
@@ -1206,7 +1218,9 @@ Because this project does not intend to settle on a single, final, 'best' model,
 
 Because no single framework is sufficient for selecting between all models tested, a large portion of the model-selection process will instead be covered in @sec-results.^[As a note, I heavily suspect I'll be reworking this section before the final draft of this paper.]
 
+<!--
 \newpage
+-->
 
 ## Modeling {#sec-modeling}
 
@@ -1907,7 +1921,9 @@ Dimensionality-reduction methods were used in a supporting role rather than as r
 
 Ultimately, the retained player-categorization model should be understood as a practical descriptive device. It provides a reproducible way to summarize broad playstyle variation across player-month observations, and the associated diagnostics suggest that the resulting clusters are usable as behavior profiles for downstream description. They are not, however, treated here as definitive latent classes or as a basis for inferential claims about underlying player types.
 
+<!--
 \newpage
+-->
 
 ## Results {#sec-results}
 
@@ -2502,6 +2518,10 @@ The clusters have some continuity over time, but not enough to justify treating 
 
 Though unsuitable for inference, the retained $k$-means categorization solution is useful because it captures multiple distinct dimensions of behavior, those profiles are unevenly distributed across format, and that they show only moderate persistence over time. They do not, however, establish sharply-separated latent types or imply stable archetypes. At the end of the day, the clustering solution serves as a descriptive map of player-month behavior, but its moderate persistence and uneven transition structure suggest that these clusters are better understood as recurring behavioral profiles than anything more concrete.
 
+<!--
+\newpage
+-->
+
 ## Discussion
 
 <!--
@@ -2591,19 +2611,24 @@ Also related to the scope and scale of the data is granularity. The game of ches
 
 Finally, it must be acknowledged that the data used for modeling are both relative to a specific platform in Lichess and dependent on the time period studied. The results should accordingly not be used to describe online chess behavior as a whole, but interpreted in the context of the Lichess population from January 2024 through December 2025. It might be that other platforms like Chess.com show similar results or that the Lichess ecosystem behaved very similarly in years prior to 2024, but it's equally possible that those alternate populations behave in entirely different manners.
 
+<!--
 \newpage
+-->
 
-## Furture Work
-Discuss what work could be done with this model to make it better.
+### Furture Work {#sec-future-work}
+
+The clearest and most immediate next step is to apply the retained modeling framework to richer and more-targeted datasets that allow greater depth within each substantive domain. This project was intentionally broad and reproducible, which made it possible to study several facets of online chess behaviors at once, but limited how deeply any one domain could be modeled. Future work could accordingly trade breadth for depth by using larger and more specialized datasets to model particular questions with greater specificity. Potential avenues include move-level game data, richer opening annotations, and more detailed and longer-spanning player histories.
+
+The current results also point to several specific questions that deserve more direct study. Included among such questions are: whether metagame broadening reflects experimentation or mere long-tail expansion; whether low-time frequency among stronger players reflects sharper positions or more selective time investment; and whether repertoire adjustment is a genuine precursor to improvement or simply a correlate of broader behavioral change. Follow-up studies could test these mechanisms more directly by building models around the unresolved processes suggested by our results rather than only refining the same descriptive summaries.
+
+A final priority for future work is to evaluate the external generality of the present findings. Our results are tied to Lichess and to a specific time window, making cross-platform and cross-period comparison especially important. Replication on other platforms or different time periods would help identify which patterns are platform-specific and which are more general features of online chess. If the framework proves stable across settings, it could support broader comparative chess research with possible wide-ranging implications.
 
 
-
-
-
+<!--
 \newpage
 ## References
 List the reference used for your paper. This should include anything cited in your background section and the source of your data.
-
+-->
 
 \newpage
 ## Appendix {#sec-appendix}
