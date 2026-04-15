@@ -1,9 +1,9 @@
 ---
-title: "Project Title (Placeholder)"
+title: "Metagame, Time Use, and Player Development in Online Chess: A Large-Scale Study of Lichess Games"
 author: "Camden Bergquist"
 date: "Last compiled on `r format(Sys.time(), '%B %d, %Y')`"
 abstract: >
-  Lorem Ipsum.
+  Metagame change, time management, and player development are central but often separately studied dimensions of online chess behavior. Using 24 months of public Lichess data from January 2024 through December 2025, this study builds a reproducible large-scale pipeline that samples rated games and derives linked datasets for metagame composition, opening repertoire, time use, and longitudinal player outcomes. The analysis is observational and non-causal, and combines descriptive modeling, multinomial opening models, player fixed-effects progression models, and clustering-based behavioral profiling with forward-in-time evaluation. The results indicate that the opening environment gradually spreads across a wider set of choices over time, although the extent of that spread differs by time control. Opening preferences also shift with skill, as stronger players devote a smaller share of games to the most common named openings. Patterns of time use vary by format: Higher-rated players move faster in blitz, think longer in rapid and classical, and enter low-time situations more often across all formats. In models of within-player change, later rating gains are linked more consistently to richer and less-static opening repertoires and to more complex games than to sheer game volume. Clustering results likewise suggest that chess behavior is better understood as a set of recurring play states than as a small number of fixed player types. These findings suggest that improvement in online chess is tied less to sheer volume of play than to how players allocate attention, manage time pressure, and vary their strategic choices. More broadly, the results show how large-scale game logs can be used to study adaptation and skill development in online-chess environments.
 number-sections: true
 format:
   jasa-pdf:
@@ -22,9 +22,11 @@ format:
         \usepackage{float}
         \keepXColumns
         \usepackage{ragged2e}
+        \usepackage{etoolbox}
         \newcolumntype{T}[1]{>{\RaggedRight\ttfamily\arraybackslash}p{#1}}
         \newcommand{\us}{\_\allowbreak}
         \setlength{\parindent}{2em}
+        \AtBeginEnvironment{abstract}{\setlength{\parindent}{0pt}}
 bibliography: references.bib
 execute:
   echo: FALSE
