@@ -1265,7 +1265,130 @@ ggplot(ltr_summ, aes(x = ltr_bin, y = n)) +
 
 ```
 
+```{r}
+bin_width <- 200
 
+support_by_rating2 <- dbGetQuery(con, sprintf("
+  SELECT
+    tc_bucket,
+    CAST(FLOOR(avg_rating / %d) * %d AS INTEGER) AS rating_bin,
+    COUNT(*) AS n_rows,
+    SUM(games) AS total_games
+  FROM read_parquet(%s)
+  WHERE avg_rating IS NOT NULL
+    AND games IS NOT NULL
+    AND tc_bucket IS NOT NULL
+  GROUP BY tc_bucket, rating_bin
+  ORDER BY tc_bucket, rating_bin
+", bin_width, bin_width, qpath(paths$pm_tc))) |>
+  pivot_longer(
+    cols = c(n_rows, total_games),
+    names_to = "measure",
+    values_to = "support"
+  ) |>
+  mutate(
+    measure = recode(
+      measure,
+      n_rows = "Row Count",
+      total_games = "Summed Games"
+    ),
+    tc_bucket = factor(tc_bucket, levels = c("blitz", "rapid", "classical"))
+  )
+
+ggplot(support_by_rating2, aes(x = rating_bin, y = support)) +
+  geom_col(width = bin_width * 0.9, fill = "steelblue", color = "steelblue") +
+  facet_grid(
+    measure ~ tc_bucket,
+    scales = "free_y",
+    labeller = labeller(
+      tc_bucket = c(blitz = "Blitz", rapid = "Rapid", classical = "Classical")
+    )
+  ) +
+  scale_y_continuous(labels = label_comma()) +
+  scale_x_continuous(breaks = pretty_breaks(n = 7)) +
+  labs(
+    x = "Rating Bin",
+    y = NULL,
+    title = "Support Across Rating Bins by Time Control",
+    subtitle = "Compares POM_TC Row Counts with Summed Games"
+  ) +
+  theme_few() +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_line(linewidth = 0.3, colour = "grey85"),
+    panel.grid.minor = element_blank()
+  )
+```
+
+```{r}
+min_moves_ptm <- 40
+positive_binwidth <- 0.01
+
+ltr_dist <- dbGetQuery(con, sprintf("
+  SELECT
+    tc_bucket,
+    low_time_rate,
+    move_rows
+  FROM read_parquet(%s)
+  WHERE tc_bucket IS NOT NULL
+    AND low_time_rate IS NOT NULL
+    AND move_rows IS NOT NULL
+    AND move_rows >= %d
+", qpath(paths$ptm_tc), min_moves_ptm))
+
+zero_panel <- ltr_dist %>%
+  mutate(panel = "Zero mass", x_cat = if_else(low_time_rate == 0, "0%", ">0%")) %>%
+  count(tc_bucket, panel, x_cat, name = "n")
+
+positive_panel <- ltr_dist %>%
+  filter(low_time_rate > 0) %>%
+  mutate(panel = "Positive support")
+
+p1 <- ggplot(zero_panel, aes(x = x_cat, y = n)) +
+  geom_col(fill = "steelblue", color = "steelblue") +
+  facet_wrap(
+    ~factor(tc_bucket, levels = c("blitz", "rapid", "classical")),
+    labeller = as_labeller(c(
+      blitz = "Blitz",
+      rapid = "Rapid",
+      classical = "Classical"
+    ))
+  ) +
+  scale_y_continuous(labels = label_comma()) +
+  labs(
+    x = NULL,
+    y = "Rows",
+    title = "Exact Zero Mass"
+  ) +
+  theme_few()
+
+p2 <- ggplot(positive_panel, aes(x = low_time_rate)) +
+  geom_histogram(
+    binwidth = positive_binwidth,
+    boundary = 0,
+    fill = "steelblue",
+    color = "steelblue"
+  ) +
+  facet_wrap(
+    ~factor(tc_bucket, levels = c("blitz", "rapid", "classical")),
+    scales = "free_y",
+    labeller = as_labeller(c(
+      blitz = "Blitz",
+      rapid = "Rapid",
+      classical = "Classical"
+    ))
+  ) +
+  scale_x_continuous(labels = percent_format(accuracy = 1)) +
+  scale_y_continuous(labels = label_comma()) +
+  labs(
+    x = "Low-Time Rate",
+    y = "Rows",
+    title = "Low-Time Distribution"
+  ) +
+  theme_few()
+
+p2 / p1
+```
 
 
 

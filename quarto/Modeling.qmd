@@ -1553,6 +1553,119 @@ p_macro_fit_final
 saveRDS(p_macro_fit_final, "../files_for_submission/Paper_files/figure-rds/p_macro_fit.rds")
 ```
 
+```{r Appendix Macro Observed-vs-Fitted Diagnostics}
+macro_diag_df <- bind_rows(
+  eco |>
+    dplyr::transmute(
+      month,
+      month_date,
+      tc_bucket,
+      observed = hhi,
+      fitted = predict(eco_hhi_wlm, newdata = eco),
+      outcome = "HHI",
+      split = dplyr::if_else(month %in% train_months, "Train", "Test")
+    ),
+  eco |>
+    dplyr::transmute(
+      month,
+      month_date,
+      tc_bucket,
+      observed = n_eff,
+      fitted = predict(eco_neff_wlm, newdata = eco),
+      outcome = "N_eff",
+      split = dplyr::if_else(month %in% train_months, "Train", "Test")
+    ),
+  mm_tc2 |>
+    dplyr::transmute(
+      month,
+      month_date,
+      tc_bucket,
+      observed = draw_rate,
+      fitted = predict(draw_wlm, newdata = mm_tc2),
+      outcome = "Draw Rate",
+      split = dplyr::if_else(month %in% train_months, "Train", "Test")
+    ),
+  mm_tc2 |>
+    dplyr::transmute(
+      month,
+      month_date,
+      tc_bucket,
+      observed = upset_rate,
+      fitted = predict(upset_wlm, newdata = mm_tc2),
+      outcome = "Upset Rate",
+      split = dplyr::if_else(month %in% train_months, "Train", "Test")
+    ),
+  mm_tc2 |>
+    dplyr::transmute(
+      month,
+      month_date,
+      tc_bucket,
+      observed = avg_moves,
+      fitted = predict(moves_wlm, newdata = mm_tc2),
+      outcome = "Average Moves",
+      split = dplyr::if_else(month %in% train_months, "Train", "Test")
+    )
+) |>
+  dplyr::mutate(
+    tc_bucket = factor(tc_bucket, levels = c("blitz", "rapid", "classical")),
+    split = factor(split, levels = c("Train", "Test")),
+    outcome = factor(
+      outcome,
+      levels = c("HHI", "N_eff", "Draw Rate", "Upset Rate", "Average Moves")
+    )
+  )
+
+p_macro_diag <- ggplot(
+  macro_diag_df,
+  aes(
+    x = fitted,
+    y = observed,
+    color = tc_bucket,
+    shape = split
+  )
+) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "grey50") +
+  geom_point(alpha = 0.55, size = 1.8) +
+  facet_wrap(
+    ~ outcome,
+    scales = "free",
+    ncol = 2,
+    labeller = as_labeller(c(
+      HHI = "HHI",
+      N_eff = "N[eff]",
+      `Draw Rate` = "Draw~Rate",
+      `Upset Rate` = "Upset~Rate",
+      `Average Moves` = "Average~Moves"
+    ), label_parsed)
+  ) +
+  labs(
+    title = "Observed vs. Fitted Diagnostics for Retained Macro Models",
+    x = "Fitted Value",
+    y = "Observed Value",
+    color = "Time Control",
+    shape = "Split"
+  ) +
+  guides(
+    color = guide_legend(override.aes = list(alpha = 1, size = 2.5)),
+    shape = guide_legend(override.aes = list(alpha = 1, size = 2.5))
+  ) +
+  scale_color_few(
+    limits = c("blitz", "rapid", "classical"),
+    labels = c("Blitz", "Rapid", "Classical")
+  ) +
+  theme_few() +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_line(linewidth = 0.3, colour = "grey85"),
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom"
+  )
+
+p_macro_diag
+
+saveRDS(p_macro_diag, "../files_for_submission/Paper_files/figure-rds/p_macro_diag.rds")
+```
+
 
 #### Opening Popularity
 
@@ -2716,6 +2829,94 @@ p_opening_rating
 saveRDS(p_opening_rating, "../files_for_submission/Paper_files/figure-rds/p_opening_rating.rds")
 ```
 
+```{r Appendix Opening Multinomial Calibration Figure}
+te_op <- test_mn |>
+  dplyr::select(month, t, tc_bucket, rating_bin, bin_total, dplyr::all_of(resp_cols_safe))
+
+pred_op <- predict(
+  mn_pooled,
+  newdata = te_op |> dplyr::select(t, tc_bucket, rating_bin),
+  type = "response"
+) |>
+  as.matrix()
+
+obs_counts <- te_op |>
+  dplyr::select(dplyr::all_of(resp_cols_safe)) |>
+  as.matrix()
+
+obs_share <- obs_counts / rowSums(obs_counts)
+pred_share <- pred_op / rowSums(pred_op)
+
+common <- intersect(colnames(pred_share), colnames(obs_share))
+
+opening_map <- name_map |>
+  dplyr::transmute(
+    opening_safe,
+    opening_label = opening
+  )
+
+op_calib <- tibble::tibble(
+  row_id = seq_len(nrow(te_op)),
+  tc_bucket = te_op$tc_bucket,
+  w = te_op$bin_total
+) |>
+  dplyr::bind_cols(
+    as_tibble(obs_share[, common, drop = FALSE]) |>
+      dplyr::rename_with(~ paste0("obs__", .x)),
+    as_tibble(pred_share[, common, drop = FALSE]) |>
+      dplyr::rename_with(~ paste0("pred__", .x))
+  ) |>
+  tidyr::pivot_longer(
+    cols = -c(row_id, tc_bucket, w),
+    names_to = "name",
+    values_to = "share"
+  ) |>
+  tidyr::separate(name, into = c("type", "opening_safe"), sep = "__") |>
+  tidyr::pivot_wider(names_from = type, values_from = share) |>
+  dplyr::group_by(tc_bucket, opening_safe) |>
+  dplyr::summarise(
+    obs = weighted.mean(obs, w = w, na.rm = TRUE),
+    pred = weighted.mean(pred, w = w, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  dplyr::left_join(opening_map, by = "opening_safe") |>
+  dplyr::mutate(
+    opening_label = dplyr::coalesce(opening_label, opening_safe)
+  ) |>
+  filter(opening_safe != "Other")
+
+p_opening_calib <- ggplot(op_calib, aes(x = pred, y = obs)) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "grey50") +
+  geom_point(alpha = 0.85, size = 2.2) +
+  facet_wrap(
+    ~ tc_bucket,
+    labeller = as_labeller(c(
+      blitz = "Blitz",
+      rapid = "Rapid",
+      classical = "Classical"
+    ))
+  ) +
+  coord_equal() +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 0.1)) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1)) +
+  labs(
+    title = "Observed vs. Predicted Opening Shares for \nRetained Pooled Multinomial Model",
+    subtitle = "Test-Set Shares Aggregated Within Time Control; `Other` Category Excluded",
+    x = "Predicted Opening Share",
+    y = "Observed Opening Share"
+  ) +
+  theme_few() +
+  theme(
+    panel.grid.major.x = element_line(linewidth = 0.3, colour = "grey85"),
+    panel.grid.major.y = element_line(linewidth = 0.3, colour = "grey85"),
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom"
+  )
+
+p_opening_calib
+
+saveRDS(p_opening_calib, "../files_for_submission/Paper_files/figure-rds/p_opening_calib.rds")
+```
 
 
 #### Time-Use
@@ -4022,6 +4223,85 @@ p_time_panels
 saveRDS(p_time_panels, "../files_for_submission/Paper_files/figure-rds/p_time_panels.rds")
 ```
 
+```{r Appendix Low-Time Calibration Figure}
+ptm_ltr_plot <- ptm_test_ltr |>
+  dplyr::mutate(
+    pred = p_frac,
+    rating_bin = as.character(as.integer(floor(avg_rating / 200) * 200)),
+    tc_bucket = factor(tc_bucket, levels = c("blitz", "rapid", "classical"))
+  ) |>
+  dplyr::group_by(tc_bucket, rating_bin) |>
+  dplyr::summarise(
+    n = dplyr::n(),
+    weight = sum(move_rows, na.rm = TRUE),
+    obs = weighted.mean(low_time_rate, w = move_rows, na.rm = TRUE),
+    pred = weighted.mean(pred, w = move_rows, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+make_lowtime_panel <- function(dat, tc_value, tc_label, x_limits, x_breaks, y_limits = x_limits) {
+  ggplot(
+    dplyr::filter(dat, tc_bucket == tc_value),
+    aes(x = pred, y = obs)
+  ) +
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "grey50") +
+    geom_point(alpha = 0.8) +
+    coord_equal(xlim = x_limits, ylim = y_limits) +
+    scale_x_continuous(
+      breaks = x_breaks,
+      labels = scales::percent_format(accuracy = 0.1)
+    ) +
+    scale_y_continuous(
+      labels = scales::percent_format(accuracy = 0.1)
+    ) +
+    labs(
+      title = tc_label,
+      x = "Predicted Low-Time Rate",
+      y = "Observed Low-Time Rate"
+    ) +
+    guides(
+      color = guide_legend(override.aes = list(alpha = 1, size = 2.5))
+    ) +
+    theme_few() +
+    theme(
+      panel.grid.major.x = element_line(linewidth = 0.3, colour = "grey85"),
+      panel.grid.major.y = element_line(linewidth = 0.3, colour = "grey85"),
+      panel.grid.minor = element_blank(),
+      legend.position = "bottom"
+    )
+}
+
+p_lowtime_blitz <- make_lowtime_panel(
+  ptm_ltr_plot,
+  tc_value = "blitz",
+  tc_label = "Blitz",
+  x_limits = c(0, 0.12),
+  x_breaks = c(0.00, 0.03, 0.06, 0.09, 0.12)
+)
+
+p_lowtime_rapid <- make_lowtime_panel(
+  ptm_ltr_plot,
+  tc_value = "rapid",
+  tc_label = "Rapid",
+  x_limits = c(0, 0.06),
+  x_breaks = c(0.00, 0.015, 0.03, 0.045, 0.06)
+)
+
+p_lowtime_calib <- (p_lowtime_blitz + p_lowtime_rapid) +
+  patchwork::plot_layout(guides = "collect", nrow = 1) +
+  patchwork::plot_annotation(
+    title = "Observed vs. Predicted Low-Time Rate",
+    subtitle = "Retained Fractional Low-Time Model, Test Set",
+    theme = theme(
+      legend.position = "bottom"
+    )
+  )
+
+p_lowtime_calib
+
+saveRDS(p_lowtime_calib, "../files_for_submission/Paper_files/figure-rds/p_lowtime_calib.rds")
+```
+
 
 #### Player-Progression Models
 
@@ -5294,6 +5574,70 @@ p_player_coef
 saveRDS(p_player_coef, "../files_for_submission/Paper_files/figure-rds/p_player_coef.rds")
 ```
 
+```{r Appendix Progression FE Binned Observed-vs-Predicted}
+# Retained FE progression model: 1-month rating change
+# Uses held-out test data and bins predictions into deciles.
+
+fe_test_base <- spl_1m$test |>
+  dplyr::select(player, month, d_rating_1m, dplyr::all_of(base_feature_cols)) |>
+  tidyr::drop_na()
+
+fe_test_plot <- fe_test_base |>
+  dplyr::mutate(
+    pred = as.numeric(predict(fe_1m$model, newdata = fe_test_base))
+  ) |>
+  dplyr::filter(!is.na(pred), !is.na(d_rating_1m))
+
+fe_binned <- fe_test_plot |>
+  dplyr::mutate(
+    pred_bin = dplyr::ntile(pred, 10)
+  ) |>
+  dplyr::group_by(pred_bin) |>
+  dplyr::summarise(
+    n = dplyr::n(),
+    pred_lo = min(pred, na.rm = TRUE),
+    pred_hi = max(pred, na.rm = TRUE),
+    mean_pred = mean(pred, na.rm = TRUE),
+    mean_obs  = mean(d_rating_1m, na.rm = TRUE),
+    sd_obs    = stats::sd(d_rating_1m, na.rm = TRUE),
+    se_obs    = sd_obs / sqrt(n),
+    ci_lo     = mean_obs - 1.96 * se_obs,
+    ci_hi     = mean_obs + 1.96 * se_obs,
+    .groups = "drop"
+  )
+
+axis_rng <- range(
+  c(fe_binned$pred_lo, fe_binned$pred_hi, fe_binned$ci_lo, fe_binned$ci_hi),
+  na.rm = TRUE
+)
+
+pad <- 0.04 * diff(axis_rng)
+x_rng <- c(axis_rng[1] - pad, axis_rng[2] + pad)
+y_rng <- c(axis_rng[1] - pad, axis_rng[2] + pad)
+
+p_prog_fe_binned <- ggplot(fe_binned, aes(x = mean_pred, y = mean_obs)) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "grey50") +
+  geom_errorbar(aes(ymin = ci_lo, ymax = ci_hi), width = 0, linewidth = 0.6) +
+  geom_point(size = 2.4) +
+  coord_equal(xlim = x_rng, ylim = y_rng) +
+  labs(
+    title = "Observed vs. Predicted Binned Plot for \nRetained FE Progression Model",
+    subtitle = "Points are Deciles of Predicted 1-Month Rating Change",
+    x = "Mean Predicted Rating Change",
+    y = "Mean Observed Rating Change"
+  ) +
+  theme_few() +
+  theme(
+    panel.grid.major.x = element_line(linewidth = 0.3, colour = "grey85"),
+    panel.grid.major.y = element_line(linewidth = 0.3, colour = "grey85"),
+    panel.grid.minor = element_blank()
+  )
+
+p_prog_fe_binned
+
+saveRDS(p_prog_fe_binned, "../files_for_submission/Paper_files/figure-rds/p_prog_fe_binned.rds")
+```
+
 
 #### Player Categorization
 
@@ -6193,8 +6537,148 @@ cluster_retention_by_cluster
 cluster_top_transition
 ```
 
+```{r Appendix Clustering Feature Construction Table}
+clustering_feature_tbl <- tibble::tribble(
+  ~final_feature,           ~source_table, ~derived_construction,                                                                 ~exact_transform, ~final_standardization,
+  "avg_rating",             "pm_tc",       "Player-month-time-control average rating",                                            "None",           "z-score via scale(as.matrix(X_raw))",
+  "avg_rating_diff",        "pm_tc",       "Player-month-time-control average rating differential",                               "None",           "z-score via scale(as.matrix(X_raw))",
+  "avg_moves",              "pm_tc",       "Player-month-time-control average moves",                                             "None",           "z-score via scale(as.matrix(X_raw))",
+  "win_rate",               "pm_tc",       "Player-month-time-control win rate",                                                  "None",           "z-score via scale(as.matrix(X_raw))",
+  "draw_rate",              "pm_tc",       "Player-month-time-control draw rate",                                                 "None",           "z-score via scale(as.matrix(X_raw))",
+  "opening_diversity",      "pm_tc",       "Player-month-time-control opening-diversity summary already present in pm_tc",        "None",           "z-score via scale(as.matrix(X_raw))",
+  "top_opening_share_tc",   "pom_tc",      "max(games) / sum(games) within player × month × tc_bucket",                          "None",           "z-score via scale(as.matrix(X_raw))",
+  "switched_opening_tc",    "pom_tc",      "1 if top opening differs from previous month within player × tc_bucket; else 0",     "None",           "z-score via scale(as.matrix(X_raw))",
+  "log_games",              "pm_tc",       "games from pm_tc",                                                                    "log1p(games)",   "z-score via scale(as.matrix(X_raw))",
+  "log_open_games",         "pom_tc",      "open_games_total = sum(games) within player × month × tc_bucket",                    "log1p(open_games_total)", "z-score via scale(as.matrix(X_raw))"
+)
+
+knitr::kable(
+  clustering_feature_tbl,
+  caption = "Final clustering feature set, source, derivation, transform, and standardization for the retained player-categorization solution."
+)
+```
+
+```{r Appendix Cluster Transition Heatmap}
+transition_pairs <- cat_core_km |>
+  dplyr::select(player, tc_bucket, month_date, cluster_km) |>
+  dplyr::arrange(player, tc_bucket, month_date) |>
+  dplyr::group_by(player, tc_bucket) |>
+  dplyr::mutate(
+    next_month_date = dplyr::lead(month_date),
+    next_cluster = dplyr::lead(cluster_km),
+    month_index = lubridate::year(month_date) * 12L + lubridate::month(month_date),
+    next_month_index = lubridate::year(next_month_date) * 12L + lubridate::month(next_month_date)
+  ) |>
+  dplyr::ungroup() |>
+  dplyr::filter(
+    !is.na(next_cluster),
+    (next_month_index - month_index) == 1L
+  )
+
+transition_heat <- transition_pairs |>
+  dplyr::count(
+    cluster_from = cluster_km,
+    cluster_to = next_cluster,
+    name = "n"
+  ) |>
+  dplyr::group_by(cluster_from) |>
+  dplyr::mutate(
+    p = n / sum(n)
+  ) |>
+  dplyr::ungroup() |>
+  dplyr::mutate(
+    cluster_from = factor(cluster_from, levels = levels(cat_core_km$cluster_km)),
+    cluster_to   = factor(cluster_to,   levels = levels(cat_core_km$cluster_km))
+  )
+
+p_transition_heat <- ggplot(
+  transition_heat,
+  aes(x = cluster_to, y = cluster_from, fill = p)
+) +
+  geom_tile(color = "white", linewidth = 0.4) +
+  geom_text(aes(label = scales::percent(p, accuracy = 0.1),
+                color = dplyr::if_else(p >= 0.60, "grey90", "black")), size = 3) +
+  scale_color_identity() +
+  scale_fill_distiller(
+    palette = "Blues",
+    direction = 1,
+    labels = scales::percent_format(accuracy = 1)
+  ) +
+  labs(
+    title = "Month-to-Month Transition Matrix for Retained Clusters",
+    subtitle = "Rows Sum to 100%; Transitions Computed Within Player and Time Control for Consecutive Months",
+    x = "Next-Month Cluster",
+    y = "Current-Month Cluster",
+    fill = "Row Share"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank()
+  )
+
+p_transition_heat
+
+saveRDS(p_transition_heat, "../files_for_submission/Paper_files/figure-rds/p_transition_heat.rds")
+```
 
 
+```{r Appendix PCA-UMAP Cluster Structure}
+set.seed(100)
+
+n_plot <- min(25000, nrow(cat_core_km))
+idx_plot <- sample(seq_len(nrow(cat_core_km)), n_plot)
+
+pca_cluster_df <- tibble::tibble(
+  PC1 = pca$x[, 1],
+  PC2 = pca$x[, 2],
+  cluster_km = cat_core_km$cluster_km
+) |>
+  dplyr::slice(idx_plot)
+
+umap_cluster_df <- um_df |>
+  dplyr::mutate(cluster_km = cat_core_km$cluster_km) |>
+  dplyr::slice(idx_plot)
+
+p_pca_clusters <- ggplot(
+  pca_cluster_df,
+  aes(x = PC1, y = PC2, color = cluster_km)
+) +
+  geom_point(alpha = 0.22, size = 0.7) +
+  labs(
+    title = "PCA",
+    x = "PC1",
+    y = "PC2",
+    color = "Cluster"
+  ) +
+  guides(color = guide_legend(override.aes = list(alpha = 1, size = 2.5))) +
+  theme_few() +
+  theme(legend.position = "bottom")
+
+p_umap_clusters <- ggplot(
+  umap_cluster_df,
+  aes(x = UMAP1, y = UMAP2, color = cluster_km)
+) +
+  geom_point(alpha = 0.22, size = 0.7) +
+  labs(
+    title = "UMAP",
+    x = "UMAP1",
+    y = "UMAP2",
+    color = "Cluster"
+  ) +
+  guides(color = guide_legend(override.aes = list(alpha = 1, size = 2.5))) +
+  theme_few() +
+  theme(legend.position = "bottom")
+
+p_cluster_structure <- (p_pca_clusters + p_umap_clusters) +
+  patchwork::plot_layout(guides = "collect") +
+  patchwork::plot_annotation(
+    theme = theme(legend.position = "bottom")
+  )
+
+p_cluster_structure
+
+saveRDS(p_cluster_structure, "../files_for_submission/Paper_files/figure-rds/p_cluster_structure.rds")
+```
 
 
 

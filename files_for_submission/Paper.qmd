@@ -2626,36 +2626,40 @@ The current results also point to several specific questions that deserve more d
 A final priority for future work is to evaluate the external generality of the present findings. Our results are tied to Lichess and to a specific time window, making cross-platform and cross-period comparison especially important. Replication on other platforms or different time periods would help identify which patterns are platform-specific and which are more general features of online chess. If the framework proves stable across settings, it could support broader comparative chess research with possible wide-ranging implications.
 
 
-<!--
+
 \newpage
-## References
+## References {.unnumbered}
+<!--
 List the reference used for your paper. This should include anything cited in your background section and the source of your data.
 -->
 
+::: {#refs}
+:::
+
 \newpage
-## Appendix {#sec-appendix}
-### Appendix A Graphs (Use appropriate name)
+## Appendix {#sec-appendix .unnumbered}
+### Appendix A Graphs (Use appropriate name) {.unnumbered}
 ```{r appendix A, echo=FALSE}
 # Use this code to display useful graphs that do not belong in the body of the paper.
 # For example use this area for model validation graphs like residual versus fit.
 ```
 
-#### A.1 (Use appropriate name)
+#### A.1 (Use appropriate name) {.unnumbered}
 If showing multiple graphs make sure to index them by 0.1 each
 
 
 \newpage
 
-### Appendix B Tables (Use appropriate name)
+### Appendix B Tables (Use appropriate name) {.unnumbered}
 ```{r appendix B, echo=FALSE}
 # Use this area to show results that are in table format
 ```
 
-#### Appendix B.1 (Use appropriate name)
+#### Appendix B.1 (Use appropriate name) {.unnumbered}
 If showing multiple tables make sure to index them by 0.1 each
 
 
-### Code
+## Code {.unnumbered}
 ```{r cleaning,echo=FALSE,eval=FALSE}
 # Write your cleaning code here
 ```
@@ -2666,7 +2670,7 @@ If showing multiple tables make sure to index them by 0.1 each
 #| eval: false
 ```
 
-## Cleanup (Header To-Be Removed for Final Draft)
+## Cleanup (Header To-Be Removed for Final Draft) {.unnumbered}
 
 ```{r Cleanup, output = FALSE}
 if (exists("con") && DBI::dbIsValid(con)) {
