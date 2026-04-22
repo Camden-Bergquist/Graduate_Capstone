@@ -81,29 +81,25 @@ Make sure every code chunk has echo=FALSE in its preamble unless you need to hig
 
 ## Introduction
 
-Competitive games have become a major source of large-scale behavioral data, enabling researchers to study strategic decision-making, skill development, and population-level trends using observational logs at scales unheard of compared to controlled studies [@edelmann2020css; @watts2014css]. Chess is one of the most famous competitive games in the world, and the relatively recent growth of online platforms has created datasets with millions to billions of games played under standardized rules and well-defined competitive contexts (time controls, ratings, game outcomes, etc.) [@watts2014css; @lichessDatabase]. One of the most widely used sources is the Lichess Open Database, which provides public monthly exports of rated games played on lichess.org in PGN format [@lichessDatabase; @lichessDatabaseGitHub]. These exports make it possible to study how strategy and performance vary across skill levels and time controls in a modern, online environment.
+Competitive games have become a major source of large-scale behavioral data, enabling researchers to study strategic decision-making, skill development, and population-level trends using observational logs at scales unheard of compared to controlled studies [@edelmann2020css; @watts2014css]. Chess is one of the most-played competitive games in the world, and the relatively recent growth of online platforms has created datasets with millions to billions of games played under standardized rules and well-defined competitive contexts (e.g., time controls, ratings, game outcomes, etc.) [@watts2014css; @lichessDatabase]. One of the most widely used sources is the Lichess Open Database, which provides public monthly exports of rated games played on lichess.org in PGN format [@lichessDatabase; @lichessDatabaseGitHub]. These exports make it possible to study the ways strategy and performance vary across skill levels and time controls in a modern, online environment.
 
-This project intends to use Lichess game data to investigate contemporary metagame behavior and player development. Here, 'metagame' refers to the population-level distribution of strategic choices and styles observed in practice – such as opening families, risk preferences, and game outcomes – within a defined time window and player population. In addition to describing how strategic behavior differs by rating and time control, the project will attempt to connect these strategic signatures to measures of player progression over time. Because chess is a repeatedly played, fully competitive setting with a mature rating infrastructure, it offers a natural testbed for quantifying skill and comparing behavior across different players [@lichessRatingSystems; @glickmanGlicko2Desc].
+This study uses Lichess game data to investigate contemporary metagame behavior and player development. Here, 'metagame' refers to the population-level distribution of strategic choices and styles observed in practice – such as opening families, risk preferences, and game outcomes – within a defined time window and player population. In addition to describing how strategic behavior differs by rating and time control, we attempt to connect these strategic signatures to measures of player progression over time. Because online chess is a repeatedly-played and fully-competitive setting with a mature rating infrastructure, it offers a natural testbed for quantifying skill and comparing behavior across a localized playerbase [@lichessRatingSystems; @glickmanGlicko2Desc].
 
-A central component of modern chess analytics is the rating system used to summarize player strength. The ELO rating system – a system originally developed for chess – models player performance probabilistically, and remains a foundational reference point for interpreting skill differences and expected outcomes in competitive settings [@elo1978rating; @fideElo2025]. Lichess uses a modified version of this system called 'Glicko-2', which, in addition to rating, tracks uncertainty via rating deviation and volatility [@lichessRatingSystems; @glickmanGlicko2Desc]. Ratings are especially useful for observational studies because they provide a consistent scale by which to stratify players and construct longitudinal measures of improvement [@glickmanGlicko2Desc].
+A central component of modern chess analytics is the rating system used to summarize player strength. The ELO rating system – a system originally developed for chess – models player performance probabilistically, and remains a foundational reference point for interpreting skill differences and expected outcomes in competitive settings [@elo1978rating; @fideElo2025]. Lichess uses a modified version of this system called 'Glicko-2', which, in addition to rating, tracks uncertainty via rating deviation and volatility [@lichessRatingSystems; @glickmanGlicko2Desc]. Skill ratings are especially useful for observational studies like this one because they provide a consistent scale by which to stratify players and construct longitudinal measures of improvement [@glickmanGlicko2Desc].
 
 Overall, this project attempts to marry data science, computational social science, and strategic behavior: It treats online chess as a real-world environment where strategic choices and performance outcomes can be measured at scale and subsequently analyzed using statistical learning methods [@edelmann2020css; @watts2014css].
 
 ### Background {#sec-background}
 
-A growing research literature uses large online chess datasets to study human performance, decision-making, and strategic patterns. For example, Chowdhary et al. leverage an online chess dataset at the scale of over 100 million games to quantify performance dynamics and career-like trajectories, illustrating how large game archives support population-level behavioral measurement across skill levels [@chowdhary2023performance].
+A growing research literature uses large online chess datasets to study human performance, decision-making, and strategic patterns. For example, Chowdhary et al. leverage an online chess dataset at the scale of over 100-million games to quantify performance dynamics and career-like trajectories, illustrating how large game archives support population-level behavioral measurement across skill levels [@chowdhary2023performance].
 
 One important line of work focuses on time usage and decision quality under time constraints. Online chess platforms record both move sequences and clock information, which allows researchers to study how players allocate thinking time and how time pressure shapes decisions. Russek et al. analyze millions of Lichess games to relate move times to the estimated value of additional computation, and show that time allocation patterns vary systematically with playing strength and time control [@russek2025thinking]. These findings support the idea that online chess is a rich setting for studying bounded rationality and performance under constraints, especially when comparing bullet, blitz, rapid, and classical formats [@russek2025thinking].
 
 Chess opening choice is also an active research topic. Because openings are discrete, labelable strategic choices that occur early in every game, they are well suited to population-level analysis. De Marzo and Servedio use online chess community data to quantify opening similarity and complexity, including representing openings in network form and studying how opening-related structure can be used to forecast future opening adoption [@demarzo2023openings]. This motivates analyzing metagame development in terms of shifting opening popularity and success rates across time, player skill, and time controls [@demarzo2023openings; @chowdhary2023performance].
 
-Finally, there is an emerging interest in identifying player styles or archetypes from game logs. While traditional chess analysis often focuses on engine evaluation of positions, a complementary approach is to extract behavioral features from move sequences and outcomes (e.g., game length, opening selection, and other style proxies) and use statistical learning to characterize player types. For instance, McIlroy-Young et al. demonstrate that models trained on move sequences can capture individual-specific signatures (“style”) in chess decisions, providing evidence that player behavior is meaningfully distinguishable from game records alone [@mcilroyyoung2021stylometry]. This creates a bridge between strategic analysis (what players choose to do) and longitudinal outcomes (how players improve or persist over time), which aligns closely with the goals of this project.
+Finally, there is an emerging interest in identifying player styles or archetypes from game logs. While traditional chess analysis often focuses on engine evaluation of positions, a complementary approach is to extract behavioral features from move sequences and outcomes (e.g., game length, opening selection, and other style proxies) and use statistical learning to characterize player types. For instance, McIlroy-Young et al. demonstrate that models trained on move sequences can capture individual-specific signatures ('style') in player decisions, supporting the notion that player behavior is meaningfully distinguishable from game records alone [@mcilroyyoung2021stylometry]. This creates a bridge between strategic analysis (what players choose to do) and longitudinal outcomes (how players improve or persist over time).
 
-Taken together, existing work suggests that large-scale online chess datasets support three relevant kinds of analysis: (1) descriptive metagame analysis of strategic choices across populations, (2) modeling how constraints like time pressure affect behavior and outcomes, and (3) data-driven characterization of player types and their evolution [@chowdhary2023performance; @russek2025thinking; @demarzo2023openings; @mcilroyyoung2021stylometry]. This project intends to build on those themes by using Lichess data to analyze modern opening/style patterns and connect them to measures of player performance and development over time.
-
-<!--
-\newpage
--->
+Collectively, existing work suggests that large-scale online chess datasets support three relevant kinds of analysis: (1) descriptive metagame analysis of strategic choices across populations; (2) modeling the way constraints (such as time pressure) affect behavior and outcomes; and (3) data-driven modeling of player growth and characterization of potential player types [@chowdhary2023performance; @russek2025thinking; @demarzo2023openings; @mcilroyyoung2021stylometry]. Here, we build on those themes by using Lichess data to analyze modern opening/style patterns and connect them to measures of player performance and development over time.
 
 ## The Data {#sec-data}
 
@@ -111,15 +107,15 @@ Taken together, existing work suggests that large-scale online chess datasets su
 <!--
 Describe where this data comes from, why it was collected, who collected it, and how it was collected. A Citation may be useful here.
 -->
-Lichess is the largest open-source chess server is the world, and releases free, monthly exports of their game data under the Creative Commons CCO license [@lichessDatabase]. The site requires a log of the game data in order to function while a game is being played, but holds onto it after the fact to allow users to analyze their games after playing them. Though Lichess offers a powerful API, I elected to download data directly from their website in `.pgn.zst` format. The PGN (portable game notation) format is a plaintext format for chess games, containing moves, headers like players, date, and event, and even optional annotation. The `.zst` file extension (sometimes also written as `zstd`) represents Zstandard compression, which is a modern compressor similar to gzip or xz that's commonly used because it's fast and compresses well; think of it as a variation on a ZIP or RAR file. Zstandard compression can be expected to shrink PGN files by 5 times on its faster, less-efficient settings, and even more on it's slower ones.
+Lichess is the largest open-source chess server is the world, and releases free, monthly exports of their game data under the Creative Commons CCO license [@lichessDatabase]. The site logs game data while a game is being played, and allows users to retroactively analyze both the games they've played and those of others on the platform. Though Lichess offers a powerful API, we elected to download data directly from their website in `.pgn.zst` format. The PGN (portable game notation) format is a plaintext format for chess games, containing moves, metadata headers (e.g., players, date, and event), and optional annotation. The `.zst` file extension (sometimes also written as `.zstd`) represents Zstandard compression – a modern compressor similar to Gzip or XZ – that's commonly used for its speed and efficiency; think of it as a variation on a `.zip` or `.rar` file. Zstandard compression can be expected to shrink PGN files by 5 times on its faster, less-efficient settings, and even more on its slower ones.
 
-For the purposes of this project, I downloaded 24 months of data spanning from January 2024 to December 2025, amounting to 677 gigabytes of raw data when compressed. Obviously, nearly 700 gigabytes of compressed data – 3~4 terabytes of uncompressed PGN data – is an insane amount to try to work with, capstone project or not. I have a powerful home computer, but that kind of scale requires something closer to a high-end server than a personal computer; it won't fly. Instead of tackling the problem head-on, I constructed a hybrid R/Python pipeline that downloads the data, deterministically samples and parses it into small chunks (in the form of parquet files), and then builds a selection of smaller, ready-for-analysis datasets from those chunks. Individually, no one dataset has the 20+ variables required in the project outline, but since I've built multiple datasets for multiple different types of analysis, they collectively meet that benchmark 
+For the purposes of this study, we downloaded 24 months of Lichess game data spanning from January 2024 to December 2025, amounting to ~677 gigabytes of raw data when compressed. Nearly 700 gigabytes of compressed data – 3~4 terabytes of uncompressed PGN data – is a scale that demands a high-end server or cloud computer— something this project doesn't have access to. As such, we relied on a hybrid R/Python pipeline that downloads the data, deterministically samples and parses it into small chunks in the form of parquet files, and then builds a selection of smaller, ready-for-analysis datasets from those chunks.
 
-The download and parsing section of the pipeline handles the following:
+The download and parsing section of the pipeline performs the following:
 
 - Reads a config file `pipeline.yml` that controls the scope and parameters of the pipeline's operation.
 - Downloads monthly Lichess 'standard rated' PGN archives for each month specified in the YAML.
-- Decompresses each Zstandard file as a stream, scanning games one-by-one so it doesn't run into RAM bottlenecks.
+- Decompresses each Zstandard file as a stream, scanning games one-by-one to prevent memory bottlenecks.
 - Parses game headers first to decide whether a game is relevant before doing any heavy work (not all games are actually getting sampled, so it skips over the ones not being used).
   - Extracts core metadata (players, ratings, time control, result, termination, opening, timestamps).
   - Buckets each game into blitz/rapid/classical using the Lichess time-control convention.
@@ -138,21 +134,31 @@ The download and parsing section of the pipeline handles the following:
 The dataset-building portion of the pipeline takes those outputs and, using DuckDB to read and write parquet files on the disk, builds seven datasets from them:
 
 - Player-level longitudinal summary tables from `games_cohort`:
-  - `player_month` (`pm`): player * month, 249,761 observations.
-  - `player_month_tc` (`pm_tc`): player * month * time control, 320,869 observations.
+  - `player_month` (`pm`): $\text{player} \times \text{month}$, 249,761 observations.
+  - `player_month_tc` (`pm_tc`): $\text{player} \times \text{month} \times \text{time control}$, 320,869 observations.
 - Player-opening 'repertoire' table from `games_cohort`:
-  - `player_opening_month_tc` (`pom_tc`): player * month * time control * opening, 7,167,580 observations.
+  - `player_opening_month_tc` (`pom_tc`): $\text{player} \times \text{month} \times \text{time control} \times \text{opening}$, 7,167,580 observations.
 - Metagame tables from `games_meta`:
-  - `meta_month_tc` (`mm_tc`): month * time control, 72 observations.
-  - `meta_opening_month_tc` (`mom_tc`): month * time control * opening, 130,672 observations.
+  - `meta_opening_month_tc` (`mom_tc`): $\text{openings} \times \text{month} \times \text{time control}$, 130,672 observations.
+  - `meta_month_tc` (`mm_tc`): $\text{month} \times \text{time control}$, 72 observations.
 - Time-usage tables from `moves_meta`:
-  - `moves_month_tc` (`mvm_tc`) month * time control, 72 observations.
-  - `player_time_month_tc` (`ptm_tc`): player * month * time control, 1,038,050 observations.
+  - `player_time_month_tc` (`ptm_tc`): $\text{player} \times \text{month} \times \text{time control}$, 1,038,050 observations.
+  - `moves_month_tc` (`mvm_tc`) $\text{month} \times \text{time control}$, 72 observations.
 
-The pipeline logs session and version info for both R and P    ython and records checksums for downloaded raw files to help with reproducibility.
+The pipeline logs session and version info for both R and Python and records checksums for downloaded raw files to help with reproducibility.
 
 ### Variables
+
+<!--
 This project is working with multiple related-yet-distinct datasets. As such, it's very difficult to properly introduce the data without an according quantity of tables, which results in several pages worth of figures. My personal recommendation is to read through table 1, featured below, before moving straight to @sec-observations.^[I'm considering consolidating the Variables and Observations sections into one, as I feel they're somewhat redundant, or else perhaps moving the Variable tables entirely into the appendix. I need to consult you for permission on that first, though.] Most variable names are self-explanatory, so this section should largely be treated as a reference to skim through if a variable introduced later is confusing or unclear. Additionally, I elected to exclude tables `mm_tc` and `mvm_tc` from this section, as they're summary-level datasets that won't be explicitly modeled. Please refer to @sec-appendix-a for information on them.
+-->
+
+The analysis utilizes several linked derived datasets rather than a single analytic table. In all cases, the raw unit of data is a rated chess game from the Lichess public database, but the pipeline aggregates games and sometimes moves into analysis-ready summaries. At the player level, `pm` and `pm_tc` summarize monthly outcomes overall and by time control; `pom_tc` captures opening use within player-month-time-control cells; `ptm_tc` summarizes move-time behavior; and `mom_tc` and `mm_tc` provide population-level metagame summaries. Because these tables operate at different units of analysis, the main text introduces them only at the level needed for later modeling. Full variable definitions are reported in @sec-appendix-a.
+
+Together, these analytical levels support longitudinal player performance modeling (`pm`, `pm_tc`), repertoire/style measurement from opening choice (`pom_tc`), metagame dynamics via opening adoption and outcomes (`mom_tc`), and bounded-rationality/time-management analyses using move-time features (`ptm_tc`).^[The remaining tables `mm_tc` and `mvm_tc` are summary-level datasets that aren't explicitly modeled.]
+
+<!--
+Not sure if I want to keep this table.
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{2.8cm} X}
@@ -181,19 +187,11 @@ This project is working with multiple related-yet-distinct datasets. As such, it
 \texttt{opening} & categorical & Human-readable opening family name (e.g., \texttt{Philidor Defense}). Used in repertoire and metagame summaries. \\
 \end{xltabular}
 ```
-
-### Observations {#sec-observations}
-Each derived dataset is organized at a different unit of analysis (e.g., player-by-month or opening-by-month). In all cases, the raw unit of data is a rated chess game from the Lichess public database, but the pipeline aggregates games (and, for time-use, moves) into analysis-ready summaries. Because many variables overlap across tables, the observation structure can be summarized with a small set of representative row types. The examples below demonstrate the core units: (1) player-period summaries (with optional time-use extensions), (2) player opening-level summaries, and (3) population-level metagame summaries for openings.
-
-Together, these observation types support longitudinal player performance modeling (`pm`, `pm_tc`), repertoire/style measurement from opening choice (`pom_tc`), metagame dynamics via opening adoption and outcomes (`mom_tc`), and bounded-rationality/time-management analyses using move-time features (`ptm_tc`).
-
-<!--
-\newpage
 -->
 
 ### Cleaning
 
-A large amount of cleaning was performed during the pipeline's parsing steps. The filtering and deterministic sampling was already touched upon in #sec-source, but additional standardization and feature construction include:
+A majority of the cleaning steps were performed during the pipeline's parsing section. Additional standardization and feature construction steps not covered in @sec-source include:
 
 - `TimeControl` tag parsed into:
   - `initial` (seconds).
@@ -209,14 +207,21 @@ A large amount of cleaning was performed during the pipeline's parsing steps. Th
 - Game-length variables:
   - Computed `piles` and `moves` from move sequences (used to construct final datasets).
 
-The information was then restructured and aggregated into a tidy format.
+The data was then restructured and aggregated into a tidy format.
 
 ## Exploratory Data Analysis {#sec-eda}
 
+This section summarizes the main descriptive patterns in the sampled data before formal modeling. It first documents support and reliability constraints that affect interpretation, then turns to broad patterns in opening behavior and time usage. Full supporting diagnostics are reported in @sec-appendix-b.
+
+### Coverage and Reliability{#sec-eda-coverage}
+
+Before turning to observed patterns, it's worth clarifying what the sampled data do and do not support especially well. @fig-coverage shows that the number of observations differs substantially across time controls, with blitz appearing more often than rapid, and both appearing much more often than classical. This is a direct consequence of our parsing method: The pipeline sampled from the underlying game population rather than enforcing balanced coverage by format. As such, the cleaned data preserve the activity structure of the platform itself. That is not a problem in its own right, but it does mean that comparisons across time controls come with unequal precision, especially where classical is concerned.
+
+<!--
 @fig-coverage, the first and most important of the EDA plots, shows the number of observations the parser sampled per player-month, colored by time control.^[Throughout, 'rows' refer to aggregated observation units (e.g., player-month-time-control or opening-month-time-control records), whereas 'games' refer to the underlying sampled matches contributing to those aggregates. A change in row counts therefore reflects changes in the breadth of observed groups, not necessarily a change in total game volume.] It highlights a fundamental flaw in my parsing method— one that I failed to consider until seeing it visualized. See, while the parser filters the raw data down to a smaller subset of time controls and rating ranges, it does nothing to ensure that there's an equal distribution of games for given time controls or players of given ratings. Rather, it simply samples in a pseudo-random manner. This means that the distribution of certain variables in the cleaned dataset will reflect the true distribution of those variables among all games stored in the Lichess database. In more straightforward terms, popular time controls like blitz are played more often than less-popular ones like classical, and that relationship is mirrored in the data, as evidenced in @fig-coverage.
 
 This finding isn't the end of the world, but it *is* extremely important to control for. It means that some 'missingness' will be structural rather than truly random, and that there will be a general imbalance across time controls, ratings, and months. It also justifies restricting certain analyses to blitz/rapid (or else collapsing them entirely), adding minimum-support thresholds to ensure there's enough data, and treating month as a potential confound only when coverage is stable enough; buckets with adequate support will be emphasized, and low-support buckets should be treated as exploratory only.
-
+-->
 
 ```{r Coverage Plot}
 #| label: fig-coverage
@@ -244,10 +249,11 @@ ggplot(cov_pm_tc, aes(x = month, y = n_rows, group = tc_bucket, color = tc_bucke
   theme(axis.text.x = element_text(angle = 60, hjust = 1),
         legend.position = "bottom")
 ```
-
+<!--
 @fig-reliability and @fig-panel-depth display two different kinds of unreliability inherent to player-month: the former being the number of games played in a given month, and the latter the number of months each player is present for in the data (total; not necessarily consecutive). For @fig-reliability, many player-months contain few games, making outcomes like win rate or average rating noisy at the unit level, justifying a minimum-games filter for player-month analyses, weighting player-month observations by games in aggregated models, and preferring aggregated measures such as bins over raw point clouds; game count should be treated as a precision/weighting signal.
+-->
 
-For @fig-panel-depth, a majority of players only appear for a few months, which is to be expected for a hobby like chess. There's a notable spike at the 24-month column, but that makes sense— that column reflects long-time players who have likely played for much longer than two-odd years; if this data were being visualized without a two-year window, that spike would reflect a '24+' bin rather than players who have played for exactly 24 months. This attrition justifies the reporting of effective sample size for any next- or k-month analysis, using consecutive-month joins rather than simple lags on sparse panels, and potentially restricting to 'stable' players or months when clean identification is important.
+A second limitation is that the player panel is unbalanced. @fig-panel-depth shows that many players appear for only a few months, while a much smaller subset remain observable across all or most of the two-year window. That's about what one should expect from an online hobby setting, but it matters once the analysis shifts from cross-sectional summaries to player-level change over time. Any lagged or forward-looking quantity necessarily relies on re-observing the same player in later months, so longitudinal analyses operate on a smaller and more selective subset than the full sampled panel. 
 
 ```{r Panel Depth Plot}
 #| label: fig-panel-depth
@@ -274,6 +280,9 @@ ggplot(panel_len, aes(x = n_months, y = n_players)) +
   theme_few()
 ```
 
+On the whole, these patterns suggest that the dataset is informative but uneven. Some parts of the sample are much better supported than others, and short-horizon player outcomes should be treated with appropriate caution. @sec-methodology and @sec-modeling address these issues more directly, but for now the key point is simply that support varies enough to matter for interpretation.
+
+<!--
 Pictured in @fig-delta-rating is without contest the single most perfect Gaussian distribution I have ever seen in a real-world dataset. This is not a parsing mistake, nor the result of some sort of transformation, but a natural consequence of the Glicko-2 rating system employed by Lichess. Both Glicko-2 and its predecessor Glicko assume that player skill – both for individuals *and* for a given population – follows a normal distribution. Because of that, implementations of Glicko systems almost always result in normally-distributed skill ratings, provided the player count is high enough.^[It's important to note that Glicko-based systems don't 'force' ratings to conform to a normal distribution; it's possible for them to fall into any form, but the way the system is designed tends to converge towards normality in most cases.] Practically, this means that $\Delta$ rating should be treated as a noisy outcome requiring careful aggregation, preferring binned summaries over unconstrained smoothing. It also encourages caution when interpreting statistically-significant-yet-tiny effects, as small, downright impractical or meaningless outcomes can still read as significant when dealing with a distribution like this.
 
 Unsurprisingly, @fig-volatility shows that the variance in players' month-to-moth ratings decreases with the number of games played in a given month. Importantly, the figure is log-transformed; though the plot visualizes a linear relationship, the first hundred games or so are comparatively more impactful than the next thousand. This is a relationship that I would expect to see with any rating system – law of large numbers and all – but was something I was expecting from Glicko-2 in particular. On top of rating, Glicko systems also measure uncertainty, which is a Bayesian-style measure of how confident it is in a player's rating. Because uncertainty always reduces as more games are played, it makes sense that this relationship is so clearly present in the data. This figure helps reinforce the need for minimum-games filters (which will reduce heteroskedastic noise) and shows that weighting by games is defensible as precision weighting. It also supports longer-horizon $\Delta$ (over multiple months instead of just one) as a way to increase robustness because it averages noise.
@@ -285,12 +294,21 @@ Unsurprisingly, @fig-volatility shows that the variance in players' month-to-mot
 
 
 Collectively, these diagnostics show that the dataset is (1) imbalanced across time controls (and ratings, though not visualized), (2) highly variable in within-unit support, and (3) noisy in short-horizon outcomes. Therefore, methods should adopt minimum-support thresholds, use precision weights, and rely on binned or aggregated summaries for stable inference.
+-->
+### Opening Behavior {#sec-eda-opening}
 
-### Opening Share
+The opening plots ended up being more stable over time than initially expected. At the level of the most common named openings, there isn't much evidence of dramatic month-to-month turnover across the two-year sample window; the basic impression is one of gradual change as opposed to rapid metagame cycling. Though its stability differs based on time control, the same general pattern is present across all three. Refer to the supplementary appendix plots by time control <add direct references> for more information.
 
+@fig-opening-rating is more revealing. Though broad temporal drift appears fairly modest, opening share changes more clearly across rating levels. Some openings gain relative share as player rating increases, while others lose it, and those gradients are easier to see than the changes over calendar time. The Pirc and Philidor are especially good examples. Even where the shifts aren't large in absolute terms, the rating structure is clearer than anything suggested by the over-time plots alone.
+
+This insight matters because it changes the way the opening problem should be framed. The exploratory evidence does not point toward a wildly shifting opening environment so much as a fairly stable one whose internal composition differs by player strength. In other words, opening behavior looks less like a trend-over-time problem and more like one of structured choice shaped by rating and format.
+
+<!--
 Opening trends over time are one of the main ways this project aims to study metagame development. The results, featured in @fig-opening-blitz and @fig-opening-rating, are rather disappointing. In particular, @fig-opening-blitz displays an amount of stability that I never would have expected from a dataset spanning as many months as this. It should be noted that similar figures for rapid and classical time controls show similar patterns, but with more variance. I suspect this difference in variance is a result of the fewer number of rows associated with each format, as classical stands out the most. Even if variance differs, however, the pattern remains regardless of time control— there's very little drift in terms of opening popularity, at least so far as the most popular choices are concerned. A better way of exploring this dynamic would have used select months over several years, but doing so would have required a completely different parsing pipeline, so this will have to suffice. 
 
 @fig-opening-rating, while still more stable than expected, is more interesting. This figure shows clear changes in preferences as player rating increases, particularly in the cases of the Pirc and Philidor defenses— the former becoming more popular and the latter less. Even where the more stable openings are concerned, there's a more pronounced trend present than anything in @fig-opening-blitz. Even if the relationship is minor, this is evidence enough to warrant attempts at modeling opening popularity as a function of player skill.
+-->
+
 
 ```{r Opening by Rating}
 #| label: fig-opening-rating
@@ -396,9 +414,15 @@ ggplot(trend_rating, aes(x = rating_bin, y = share, color = opening, group = ope
   guides(color = guide_legend(nrow = 4, byrow = TRUE))
 ```
 
-### Time Usage
+### Time Usage {#sec-eda-time}
 
+The time-usage plots are much more in line with expectations. @fig-time shows a clear difference in thinking time across both time controls and skill levels. Blitz and classical are foils: Stronger players spend less time per move in blitz, but more time per move in classical. Rapid lies somewhere in between. Even without a formal model, that's enough to show that time control isn't just a background element; it fundamentally changes the relationship between rating and pace.
+
+<!-- Note that I commented out my low-time rate footnote and would like to add it back in somewhere. -->
+
+<!--
 @fig-time and @fig-time-allocation are much more in line with what I was expecting than the opening-popularity figures. @fig-time shows a clear difference in thinking time, both between time controls and player ratings. Blitz and classical time controls are mirrors of one another: As players get better, they spend less time per move in blitz formats and more per move in classical formats. Rapid, in contrast, shows an interesting curve, where time usage dips for a little and then increases. Overall, @fig-time is enough on its own to justify time control as a factor when modeling with move time as an outcome.
+-->
 
 ```{r Time Use}
 #| label: fig-time
@@ -434,36 +458,55 @@ ggplot(time_bin, aes(x=rating_bin, y=mean_time_spent)) +
   )
 ```
 
+<!--
 @fig-time-allocation is in my opinion one of the most interesting. It breaks down the time-per-move from @fig-time into the amount of time allocated in opening, middlegame, and endgame phases.^[Game phases are defined by the Stockfish chess engine rather than a consistent standard.] Regardless of skill or time control, the consistent throughline is that players spend the most time thinking in the middlegame and the least in the opening, with the endgame in the middle. This is about what I'd expect. The opening has the fewest possible permutations, and is often studied and memorized, and while the end- and middlegames are similar, the former tends to be defined when fewer pieces remain on the board, which reduces complexity and thus thinking time. It sugggests factoring by gamestate may also be helpful when modeling move time as an outcome.
-
-
-
-
-### Opening Diversity
-
-@fig-strata is the strangest of the figures I've chosen to share here. It's also the most complex, faceting by rating bin and coloring the plot's lines by number of games played. For the most part, players' month-to-month rating seems to remain mostly stable regardless of opening diversity. A few patterns remain consistent, however: (1) At lower ratings, opening diversity has a minor-yet-positive relationship with rating change, indicating slight improvement on average for players with a larger repertoire. This relationship seems to falls off once a player hits a rating of around 1800. And (2) the left tail of each plot tends to skew negative, regardless of where the plot is centered. I'm not entirely sure how useful any of this information will be for modeling, but I felt it was an interesting enough visualization to share.
-
-
-<!--
-\newpage
 -->
 
+A useful supplementary pattern is that the same basic story holds when time use is broken down more finely by game phase. Phase-level appendix <directly reference> plots preserve this structure, suggesting that the broad time-use gradients in @fig-time are not just artifacts of averaging everything together. Overall, time management does not look one-dimensional. Average pace changes across formats, and the meaning of 'using more time' depends heavily on the time control in question, which makes time usage look like a genuine behavioral outcome rather than a mechanical byproduct of format alone.
 
-## Methodology
+## Methodology {#sec-methodology}
+
+This section describes the analytic preparation, feature construction, and modeling framework used in the study. The analysis is observational and non-causal throughout; models are used for description, association, prediction, and exploratory summarization, *not* causal identification.
+
+Because the project combines several research questions across multiple linked datasets, the methodology proceeds in two stages. First, variables are transformed and aligned so that quantities are comparable across players, months, and time controls. Second, we define a set of modeling to match the project goals: metagame dynamics, opening popularity, time use, player progression, and player categorization.
+
+All predictive modeling uses forward-in-time data splits. Training data are drawn from earlier months in the sample window, while validation and test data are drawn from later contiguous months. Splitting is performed at the month level so that observations from a given month are never used to predict themselves or earlier periods. This design reduces temporal leakage and makes held-out evaluation more realistic, especially for progression targets defined for future rating change. Where relevant, models are also checked across time-control and rating strata to ensure that conclusions aren't driven by a single format or skill band.
+
 <!--
-Describe the methods used to analyze the data. Do not discuss the analysis itself. Make sure to discuss any train/test data splitting here.
--->
-
 At the core of this project are three themes, as listed in the @sec-background: (1) descriptive metagame dynamics, (2) how time constraints relate to behavior and performance, and (3) characterization of player types or styles. The analysis is strictly non-causal; models are used for description, association, and prediction under out-of-sample evaluation.
 
 When splitting the data into train and test sets, all predictive modeling uses forward-in-time splits to avoid data leakage. This means that the training set contains earlier months in the sample window, while the validation/test set are a contiguous block of later months that were held out from the training data. This split is applied at the month level so that predictors from any given month are never trained using information from future months. For player progression tasks, where the target is a future rating change, using time-forward splits is essential for keeping evaluation realistic.
 
 When appropriate, models are additionally checked for robustness under time-control and rating-bin stratification, to ensure performance isn't driven by a single skill or time-control band.
-
-### Data Tranformations
-<!--
-Describe any transformation you did to the data to assist in the analyzing of the data such as creating dummy variables.
 -->
+### Data Transformations {#sec-methodology-transformations}
+
+The linked analytic tables described in @sec-data operate at different observational units and therefore require additional alignment before modeling. Transformations were implemented to improve comparability across contexts, reduce instability in sparse cells, and construct interpretable predictors for the later analyses.
+
+#### Analytic Alignment and Scaling {#sec-methodology-transformations-alignment}
+
+The project does not rely on a single modeling table. Instead, different tasks utilize different analytic units, including player-month summaries, player-month-by-time-control summaries, opening-level repertoire tables, metagame month summaries, and move-time summaries. These tables were retained at their native units whenever possible so that each model could be fit on the level most appropriate to its target. As a result, some models operate on aggregate month-level data, while others operate on player-period or opening-period observations.
+
+Rating was sometimes converted from a continuous quantity into bins for descriptive summaries, nonparametric plots, and models that benefited from coarse stratification. This was done primarily to stabilize estimates and improve interpetability in settings where fine-grained rating variation was not necessary. For clustering and other multivariate feature-based analyses, retained numeric inputs were standardized as z-scores so that variables measured on different scales – e.g., seconds, proportions, counts, rating points – would contribute on a comparable basis.
+
+#### Weighting, Thresholds, and Support {#sec-methodology-transformations-weighting}
+
+Many outcomes present are rates or shares estimated from cells with unequal support. Some observations are based on large numbers of games or move rows, whereas others are based on very small samples and are correspondingly volatile. For this reason, weighting and support restrictions were used where appropriate.
+
+When player-level quantities needed to be collapsed across time controls, overall summaries were constructed using exposure-based weighting. For example, overall player-month rating was computed as a games-weighted average of time-control-specific average ratings, and overall time-pressure quantities were computed using move-based weighting when derived from move-level summaries. This approach prevents low-volume cells from exerting the same influence as high-volume cells when constructing cross-format summaries.
+
+Minimum-support thresholds were also applied in settings where extremely sparse observations would otherwise dominate. Depending on the task, these thresholds were defined in terms of games per player-month, games per opening cell, or move rows per time-use summary. These filters were not intended to alter the substantive population under study, but to limit the influence of cells whose estimates were too unstable to reliably interpret.
+
+#### Derived Features and Missingness {#sec-methodology-transformations-derived}
+
+Several interpretable features were constructed from the player-opening and time-use tables for use in the progression and categorization analyses. These features were intended to summarize broad aspects of player behavior.
+
+Repertoire breadth was measured using opening diversity, defined as the number of distinct openings used within the relevant period. Repertoire concentration was summarized using the share of games allocated to the player’s most-used opening. Repertoire adjustment was captured in two related ways—  an indicator for whether the most-played opening changed from the previous month, and measures of month-to-month repertoire churn based on changes in opening-share vectors and the appearance of newly used openings. Time-use behavior was summarized using variables such as average time spent per move, upper-tail move-time summaries, opening-phase time allocation, and low-time frequency.^[Low-time definition: A move is flagged as 'low time' if the remaining clock time after the move satisfies $\text{clock\_after} \le \max\!\left(10,\; 2 \times \text{increment}\right)$ seconds, where $\text{increment}$ is the per-move increment of the game's time control.]
+
+Some time-use variables were structurally missing rather than randomly absent. In particular, endgame time measures are often unavailable because many games do not reach a computer-defined endgame phase.^[<Placeholder: Potential note here elaborating on the reason why?>] These missing values therefore reflect game structure instead of arbitrary loss of data. Models using phase-specific variables either handled these cases explicitly or restricted analysis to observations for which the relevant phase was meaningfully defined.
+
+
+<!--
 
 Transformations serve to stabilize noisy estimates, make quantities comparable across players and contexts, and construct interpretable features aligned with all three research topics. Different transformations are applied for different purposes.
 
@@ -501,15 +544,29 @@ For more information on pre-existing features, see @sec-data.
 
 Finally, phase-specific time metrics are often missing for structural reasons. Almost always, the phase missing is endgame, as many games never reach a computer-defined endgame due to resignation or blundered, early losses. Models that use phase variables either include explicit missingness handling or analyze phases separately with appropriate inclusion rules.
 
-### Types of Models {#sec-types-of-models}
+-->
+
+### Modeling Tasks and Candidate Specifications {#sec-methodology-models}
+
+Because this paper addresses several distinct questions, candidate models are organized by modeling task rather than abstract model family. Each task corresponds to a substantive question, a natural observational unit, and a set of candidate specifications suited to that problem. Formal model comparison and retention are deferred to @sec-modeling. Instead, the present section defines the role of each modeling task and the types of specifications considered.
+
+<!--
 Because this project aims to explore a variety of questions by modeling on multiple datasets, strictly categorizing models by family makes little sense.^[Here, I define "model family" as sets of  models operating under similar principles and fundamental assumptions (e.g., general linear models, tree-based models, etc.), whereas "model category" refers to the five groupings of models I specifically define for this paper.] Were there a single theme and associated dataset, doing so would make it easy to illustrate exactly how each type of model contributes to the project's singular goal. In this case, however, I think it more appropriate to categorize models by their goal; to define them by the questions they intend to answer and the methods they'll use in seeking them.^[It should be noted that this form of model categorization allows for slight overlap between model families; some families may be used by multiple categories of model.] 
+-->
 
 
 #### Metagame Dynamics {#sec-metagame-dynamics}
 
+Metagame-dynamics models were used to describe how aggregate ecosystem measures changed across month and time control. These models focus on population-level structure rather than individual players. Depending on the outcome, the primary observational units were either month-by-time-control summaries or opening-by-month-by-time-control summaries.
+
+The main outcomes in this task include concentration and diversity measures, draw rate, upset rate, average game length, and opening share. Predictors primarily include month, time control, and their interactions. Candidate specifications included weighted linear models for macro outcomes and multinomial models for opening composition, with simpler opening-by-opening share models considered as descriptive comparisons.
+
+The motivation for using more than one specification in this task is straightforward. Some metagame quantities, such as concentration or average moves, are scalar month-level summaries and are naturally modeled with weighted regressions. Opening composition, by contrast, is inherently compositional— increases in one opening’s share imply decreases elsewhere. Models that account for this compositional structure were therefore considered when the goal was to describe substitution within the opening ecosystem.
+
+
 <!--
 Temporal dynamics and environment (time is the key axis)
--->
+
 
 The goal of metagame models are to quantify how aggregate metagame metrics vary across factors such as time and format. The primary observational unit is `meta_opening_month_tc`, while response variables include `share` and outcome rates (e.g., `white_win_rate`). The model families which fall under this category include generalized additive models (GAM) and weighted linear models (WLM), as well as multinomial models. 
 
@@ -518,12 +575,19 @@ GAM and WLM models are useful because they produce simple, easy-to-read trend es
 Multinomial models exist to solve the problem of compositional variables. By modeling on log-odds and log-ratios, they avoid predicting impossible shares ($\notin 0 < x < 1$); in essence, they're capable of implicitly understanding that if one opening goes up, others must go down. This provides interpretable effects for opening adoption relative to a specific baseline, meaning they're best when relative substitution between openings is of import. Multinomial models tend to work better when modeling a large portion of a distribution (rather than just the top k), but as a consequence are more complicated to both implement and interpret.
 
 Combined, these models attempt to ask questions about the state of the metagame – the Lichess 'ecosystem' –  and its evolution rather than just fitting adoption curves. 
+-->
 
 #### Opening Popularity {#sec-opening-popularity}
 
+Opening-popularity models were used to describe how opening choice varied with player strength and time control. This task overlaps with metagame analysis, but it is narrower in scope; instead of modeling the ecosystem as a whole, it focuses specifically on opening-adoption patterns.
+
+The primary observational unit for this task is the month-by-time-control-by-rating-bin opening summary. Outcomes are opening shares or opening-use counts, and the key predictors are rating level, time control, month, and rating-by-format interactions. Candidate specifications included pooled multinomial models as the main compositional approach, along with count-based and weighted share models as lower-complexity alternatives.
+
+This task treats opening popularity as a structured choice problem. The multinomial framework is useful because it represents the full set of retained openings jointly, allowing probabilities to coherently shift across categories. Simpler single-opening models remain useful as descriptive checks, but fail to fully represent substitution across openings and as such play a secondary role in this modeling category.
+
 <!--
 Skill-conditioned preferences (rating is the key axis). Update first paragraph now that we're using `pom_tc` instead.
--->
+
 
 The goal of opening-popularity models is to describe how opening preferences differ by player skill and time control. You'll notice that this goal shares substantial overlap with that of metagame models, and indeed, opening popularity is a subset of metagame dynamics. The core difference between the two is that opening-popularity models exclusively target the adoption rate of openings at the expense of all other metagame descriptors; they care not for the diversity of the opening pool, or how outcome rates, game length, and rating gaps shift, for instance. While both use `meta_opening_month_tc` as an observational unit, popularity models prefer to treat each opening separately (top-k) or as a compositional set focused on `share`. Models in this category include multinomial models, count models, and weighted regression.
 
@@ -535,7 +599,17 @@ Finally, weighted regression on `share` takes the 'simple is best' philosophy to
 
 Together, these models seek to hone in on opening popularity with a higher degree of specificity than the metagame models, each through varying levels of complexity.
 
+-->
+
 #### Time Use {#sec-time-use}
+
+Time-use models were used to characterize how time allocation varied across skill and time control. These models treat time management as a behavioral outcome rather than as a byproduct of format alone. Two related targets were emphasized— average time use and low-time frequency.
+
+Depending on the target, the primary observational units were either player-month-by-time-control summaries or month-level time-use summaries. Outcomes include average time spent per move, upper-tail move-time summaries, phase-specific averages, and the proportion of moves taken in low-time states. The central predictors are player rating, time control, and in some cases their interaction, with month included where temporal adjustment is needed.
+
+Candidate specifications included additive and interaction regressions for mean time-use outcomes, robust or quantile-based alternatives for heavy-tailed variables, and bounded-outcome models for low-time frequency. The reason for considering multiple mean-modeling strategies is that time-use data can be skewed and sensitive to outliers, while low-time frequency is both bounded and concentrated near zero. Different specifications were considered depending on whether the main problem was nonlinearity, heavy tails, or proportion structure.
+
+<!--
 Time use models attempt to characterize the way time allocation varies across skill and time control. Observational units are `player_time_month_tc` for player-level behavior and `moves_month_tc` for macro behavior. Response variables include time spent, time management, pressure, and phase allocation, while predictors primarily consist of `avg_rating` and `tc_bucket`. Three related pairs of models populate this category: additive- and interaction regression, robust- and quantile regression, and beta- and logistic-style modeling.
 
 Additive regression and interaction regression provide a clean separation between skill effects and constraint effects. Additive regression assumes each predictor contributes its own effect, and that those effects simply add up, best for when predictors are believed to act independently of one another. They also tend to be a substitute for interaction regression when there's not enough data. Interaction regression, as the name implies, allows the effect of one predictor to depend on the level of another predictor. Both are relatively easy to interpret.
@@ -545,8 +619,17 @@ Robust regression and quantile regression are useful in situations when ordinary
 Beta and logistic modeling are along for the ride because of a specific problem. Namely, `low_time_rate` is bounded and almost always piles up at 0. Both beta and logit-style approaches keep predictions bounded in [0, 1], handling proportion structure better than OLS, the core difference between the two being that logistic modeling uses a binary response (or a count of successes out of a total number of trials), while beta modeling uses a continuous proportion between 0 and 1. By binning low-time rate, it's possible to produce stable summaries that avoid smoothing failures, making for a more-easily-defensible model
 
 Together, these models thoroughly explore several different methods of time-use analysis. The reason this section contains three pairs of complimentary models rather than just the 'better' of each pair is that the EDA did not produce conclusive enough evidence to justify jumping straight to a smaller subset of model options; the data is complex enough that a simple visual inspection was insufficient for ruling out one choice or the other, and so the most reliable solution is to test them all.
+-->
 
 #### Player Progression {#sec-player-progression}
+
+Player-progression models were used to relate current-month behavior to later rating movement. These models ask whether within-player changes in activity, game structure, repertoire behavior, and related features are associated with subsequent changes in rating over short horizons.
+
+The baseline observational unit is the player-month table, optionally joined to time-control or repertoire summaries when the required predictors are available. Outcomes are defined as future rating change over one- and three-month horizons, along with an absolute-change outcome used to summarize movement magnitude without direction. Predictors include current rating, game volume, average game length, repertoire breadth, repertoire concentration, repertoire adjustment, and selected time-use features where support permits.
+
+Candidate specifications included regularized linear models, panel-data models, and tree-based regressions. Regularized models were considered because many player-level predictors are correlated. Panel models were considered because the data are longitudinal and repeated within players. Tree-based models were considered as flexible predictive benchmarks capable of capturing nonlinearities and interactions without manual specification. Because this task is explicitly forward-looking, realistic temporal splitting is especially important; the model must predict later rating movement using only information available at the current month.
+
+<!--
 Player-progression models are straightforward: They wish to relate a player's current-month behavior to future rating change. The purpose of this category is simple, asking if it's possible to isolate certain factors that prove to have a marked effect on a player's growth— positive *or* negative. The baseline observational unit for these models is `player_month`, which can be stratified by time control (`player_month_tc`) or joined to other tables for additional information (e.g., `player_time_month_tc` or `player_opening_month_tc`). The response variables are derived from `avg_rating` and all represent $\Delta rating$ in some form. Horizon spans may differ (i.e., rating change over spans greater than a single month), and constructing a stability model using $|\Delta|$ is also possible. Predictors include the number of games and moves played during a given timespan, style proxies, and time-use features, controlled by baseline rating and other fixed effects. Comprising this category are model families such as regularized linear models, mixed-/fixed effects models, and tree-based regression.
 
 Regularized linear models (ridge, lasso, elastic net) help account for the fact that this category's predictors are correlated. Regularization stabilizes these estimates. Ridge regression is good for prediction under multicollinearity, and lasso, though perhaps less relevant here is good for feature selection. Elastic net is a hybrid of the two. As a whole, they should provide a strong baseline predictive model without sacrificing interpretability.
@@ -556,8 +639,16 @@ Fixed effects models and mixed (random) effects models are good at handling long
 Tree-based regression both naturally captures nonlinearities and thresholds in the data and automatically handles interactions without explicit specification. They're best for exploratory prediction and detecting complex feature relationships. As with all tree-based models, this comes at the cost of interpretability; they require interpretation tools such as feature importance, partial dependence plots, individual conditional expectation plots, et cetera, and even then struggle to match the interpretability of more-straightforward models.
 
 Together, these models account for the varying facets of longitudinal player-level modeling in order to identify the best angle to attack the problem from.
-
+-->
 #### Player Categorization {#sec-player-categorization}
+
+Player-categorization models were used to summarize recurring behavioral profiles in player-month observations. This task is exploratory rather than inferential. The goal is not to estimate latent causal types, but to determine whether broad behavioral configurations can be recovered from performance, repertoire, and activity features.
+
+The natural observational unit is a joined player-month-by-time-control table containing performance measures, repertoire summaries, and other standardized features. Inputs include rating, rating differential, game length, outcome rates, repertoire breadth, repertoire concentration, repertoire adjustment, and selected activity measures. Time-use variables were considered where coverage allowed, but their inclusion depended on support in the merged sample.
+
+Candidate specifications included dimensionality-reduction methods and clustering algorithms. Dimensionality reduction was used to summarize major axes of behavioral variation and to inspect whether lower-dimensional structure was visible in the data. Clustering methods were used to partition the feature space into interpretable behavioral groupings. Because the goal of this task is descriptive summarization, later evaluation emphasizes balance, stability, and interpretability rather than formal inference.
+
+<!--
 As the name implies, player-categorization models want to categorize players. More specifically, they seek to identify clusters using behavioral features, stratifying by rating and format, and observing for stability. This is by far the most nebulous of the model categories because they're primarily exploratory in nature; rather than beginning with pre-defined player archetypes and asking how their performance differs, these models ask which style clusters (if any) can be identified in the first place. The most straightforward observational unit is a join between `player_month_tc`, `player_time_month_tc`, and repertoire-derived features, and inputs include performance, outcomes, repertoire breadth, time use, and general context. The core model families in this category are dimensionality reduction and clustering, though additional modeling becomes possible after playstyle has been categorized.
 
 Dimensionality reduction methods such as principal component analysis (PCA) and uniform manifold approximation and projection (UMAP) provide low-dimensional representation. PCA yields interpretable axes and helps with noise reduction, whereas UMAP is useful for visual separations and nonlinear manifolds. PCA is a linear method which tries to preserve large-scale structure, while UMAP is a nonlinear method prefers preserving cluster separation. Dimensionality reduction is good at for summarizing multi-feature space *before* clustering or visualization, which should prove helpful in the case of a very broad 'style space'.
@@ -567,22 +658,89 @@ Clustering methods (e.g., k-means, hierarchical, GMM) are potentially capable of
 Though perhaps not within the scope of this project, dimensionality reduction and clustering are notable as a potential method of creating discrete types for downstream modeling. Once each player-month has a type, it becomes possible to study stability and movement between types or perform supervised follow-up using type labels (e.g., as predictors of progression).
   
 Together, these models explore the bounds of player-archetype/playstyle categorization.
+-->
 
+### Summary {#sec-methodology-summary}
+
+Taken together, these transformations and modeling tasks define the analytic structure of the paper. The transformations align linked datasets, stabilize sparse quantities, and produce interpretable features for later use. The modeling tasks then organize the empirical questions into five domains: ecosystem-level metagame change, opening choice, time management, longitudinal progression, and exploratory behavioral profiling.
 
 ## Modeling {#sec-modeling}
 
-<!--
-Professor described this as "a bit of a rough draft of the results section" where he "[expects] completed models with some initial comparisons between them and what models are showing the most usefulness", whereas "the later results section should include this comparison but also include analysis and inference from the final selected model(s)".
--->
+This section compares the candidate models introduced in @sec-methodology-models and identifies the specifications retained for the remainder of the analysis. The purpose here is not to present substantive findings, but to narrow a broader set of candidate models to a smaller set of primary specifications for each modeling task. Substantive interpretation is deferred to @sec-results.
 
-This section compares the fitted models introduced in @sec-types-of-models and identifies the specifications retained for the remainder of the analysis. The goal here is not to present substantive inference, but to narrow a larger set of candidate models to a smaller set of primary specifications for each modeling task.
+Model retention is based on four considerations: inferential suitability, held-out predictive adequacy, robustness to reasonable specification changes, and interpretability. These criteria do not apply identically to every modeling problem. In some cases, the retained model is primarily inferential; in others, it is better understood as descriptive or predictive. This distinction is especially important for exploratory methods such as clustering, which are useful for summarizing structure in the data but are not treated as a basis for inferential claims.
+
+Because a large number of models were fit during development, the body of this section focuses on retention decisions and the reasons for them. Detailed predictive comparisons, robustness checks, and supplemental diagnostics are reported in appendices @sec-appendix-c, @sec-appendix-d, @sec-appendix-e, and @sec-appendix-f.
+
+<!--
+
+This section compares the fitted models introduced in @sec-methodology-models and identifies the specifications retained for the remainder of the analysis. The goal here is not to present substantive inference, but to narrow a larger set of candidate models to a smaller set of primary specifications for each modeling task.
 
 Model retention is based on four considerations: inferential suitability, held-out predictive adequacy, robustness to reasonable specification changes, and interpretability. These criteria do not apply identically to every modeling problem. In some cases, the most useful retained model is the one that supports formal inference, while in others the retained model is better understood as descriptive or predictive only. This distinction is especially important for methods such as clustering, which are useful for summarizing structure in the data but are not intended as a basis for inferential claims.
 
 Because a large number of models were fit during development, the body of this section focuses on the specifications most relevant to downstream analysis. Additional model details, alternative fits, and supplemental comparisons are reported in appendices @sec-appendix-c, @sec-appendix-d, @sec-appendix-e, and @sec-appendix-f.
-
+-->
 ### Metagame Dynamics {#sec-metagame-dynamics-2}
 
+Metagame dynamics were modeled at two related levels. First, aggregate ecosystem and game-environment outcomes were modeled at the month-by-time-control level. These macro outcomes included opening concentration and diversity, along with draw rate, upset rate, and average moves. Second, opening composition itself was modeled separately by time control using specifications designed for compositional outcomes.
+
+For the macro outcomes, weighted linear models were retained as the primary inferential framework. These specifications provided a direct and interpretable way to estimate time trends and time-control differences while accommodating unequal support across month-by-format cells. Because the macro series are observed over time, inference relied on heteroskedasticity- and autocorrelation-consistent standard errors. Comparative predictive results and supporting diagnostics for these models are reported in @sec-appendix-c.
+
+```{=latex}
+\begin{figure}[htbp]
+\centering
+\small
+\begin{equation*}
+\begin{aligned}
+Y_{tc,t}
+&=
+\beta_0
++
+\beta_1 t
++
+\beta_2 \,\mathbf{1}\{\mathrm{tc}=\mathrm{Classical}\}
++
+\beta_3 \,\mathbf{1}\{\mathrm{tc}=\mathrm{Rapid}\} \\
+&\quad
++
+\beta_4 \, t \cdot \mathbf{1}\{\mathrm{tc}=\mathrm{Classical}\}
++
+\beta_5 \, t \cdot \mathbf{1}\{\mathrm{tc}=\mathrm{Rapid}\}
++
+\varepsilon_{tc,t}.
+\end{aligned}
+\end{equation*}
+\caption{Retained macro metagame model. Here, $Y_{tc,t}$ denotes a month-by-time-control metagame outcome, such as HHI concentration, effective number of openings, draw rate, upset rate, or average moves. Inference used Newey--West heteroskedasticity- and autocorrelation-consistent standard errors.}
+\label{fig:eq-metagame-macro}
+\end{figure}
+```
+
+Opening composition required a different retained model because opening shares are inherently compositional. Candidate models included weighted fixed-effects share regressions, GAM-based share regressions, and multinomial specifications fit separately by time control. The multinomial models were retained as the primary inferential basis for compositional change because they represent the full opening set jointly and therefore respect the substitution structure of opening shares. By contrast, the share-based alternatives model openings one at a time and are better treated as descriptive comparisons than as primary inferential models.
+
+```{=latex}
+\begin{figure}[htbp]
+\centering
+\small
+\begin{equation*}
+\begin{aligned}
+\Pr(Y_t = k)
+&=
+\frac{\exp(\eta_{k,t})}
+{\sum_{j=1}^{K}\exp(\eta_{j,t})}, \\
+\eta_{k,t}
+&=
+\alpha_k + \beta_k t,
+\qquad k=1,\dots,K.
+\end{aligned}
+\end{equation*}
+\caption{Retained multinomial metagame-composition model, fit separately by time control. Here, $Y_t$ denotes the opening category at month $t$, and $k$ indexes the retained opening categories.}
+\label{fig:eq-metagame-multinomial}
+\end{figure}
+```
+
+Robustness checks further supported this division of labor. Changes to the retained opening set altered predictive difficulty in the expected way, but did not overturn the main directional patterns of the multinomial results. Detailed comparisons and robustness checks for both the macro and compositional models are reported in @sec-appendix-c.
+
+<!--
 Metagame dynamics were modeled at two related levels. First, aggregate ecosystem and game-environment variables were modeled at the month-by-time-control level using weighted linear models. These macro outcomes included opening concentration and diversity – measured by the Herfindahl-Hirschman index (HHI) and the effective number of openings – along with draw rate, upset rate, and average moves. Because these series are observed over time, macro inference relies on Newey-West (HAC) standard errors. Second, Opening composition itself was modeled separately by time control using multinomial specifications, with weighted fixed-effects and GAM share models retained only as descriptive comparisons rather than as primary inferential models.
 
 
@@ -592,7 +750,290 @@ Table \ref{tab:metagame-macro-model-comparison} summarizes held-out predictive e
 The retained macro models point most clearly to declining concentration and increasing diversity in opening usage. HHI shows a negative baseline time trend, with additional negative time interactions for classical and rapid, indicating that opening usage became less concentrated over time in all three formats and that the decline was steeper outside blitz. The effective number of openings shows a corresponding positive pattern: The baseline time trend and the classical and rapid interactions are all positive, which indicates broad expansion of the opening ecosystem over time. By contrast, draw rate and average moves show no statistically reliable linear time trends, while upset rate shows a modest positive baseline trend that does not generalize as clearly across time controls. Table \ref{tab:metagame-macro-estimates} reports the estimated macro time effects underlying these retained claims.
 
 
-<!-- Need to rework tables so that the scientific notation convention is properly followed. -->
+
+
+Opening composition required a different primary model because opening shares are inherently compositional. Table \ref{tab:metagame-composition-model-comparison} compares the descriptive share models with the multinomial specifications fit separately by time control. The multinomial models were retained as the primary inferential basis for compositional change because they respect the simplex structure of opening shares, whereas the weighted fixed-effects and GAM models treat openings one at a time and therefore cannot fully represent substitution across the opening set. Held-out log loss for the multinomial models was similar across formats at 0.910 in blitz, 0.923 in rapid, and 0.940 in classical, suggesting broadly comparable predictive performance across time controls. At the same time, the descriptive share models produced nearly identical held-out error in blitz and rapid, indicating that they capture much of the same visible trend structure even though they aren't appropriate as the main inferential basis.^[Lorem ipsum.]
+
+
+
+
+Robustness checks suggest that the substantive multinomial conclusions are not highly sensitive to the exact top-$k$ threshold used to define the retained opening set. As shown in Table \ref{tab:metagame-multinomial-robustness}, increasing $k$ predictably worsened held-out log loss by making the prediction problem more demanding, but the broad directional pattern among the largest movers remained stable. In blitz, the pooled "Other" category consistently increased, while the main negative mover remained a French Defense variation once the retained opening set was sufficiently large. This suggests that the composition results reflect broad substitution within the opening ecosystem rather than dependence on a single threshold choice.
+
+
+
+
+Overall, these comparisons support a two-part retained strategy for metagame dynamics: weighted linear models for macro/ecosystem-level claims, and multinomial models for claims about opening substitution and compositional change. Weighted share regressions and GAMs remain useful descriptive checks, but won't be carried forward as the primary inferential basis for this model category.
+-->
+
+
+### Opening Popularity {#sec-opening-popularity-2}
+
+Opening popularity was modeled primarily as a compositional problem. The main inferential candidate was a pooled multinomial model fit to month-by-time-control-by-rating-bin cells, with openings aggregated into a retained top-$k$ set plus an “Other” category after sparse cells were excluded. This specification used rating bin, time control, month index, and rating-by-time-control interactions to model opening composition across player-strength strata and formats.
+
+Per-opening negative binomial and weighted least squares models were also fit as lower-complexity alternatives. These models were useful as sensitivity checks because they allowed individual openings to be examined one at a time, but that same feature limited their suitability as the primary model for opening choice. Since they do not model the opening set jointly, they cannot represent substitution across openings in a fully coherent way.
+
+The pooled multinomial model was retained as the primary specification for this subsection. The main reasons were structural appropriateness and competitive held-out performance. It aligned most directly with the compositional form of the outcome while remaining interpretable enough for downstream use in @sec-results. The simpler one-opening alternatives remained useful as supporting checks, but not as the main retained specification.
+
+```{=latex}
+\begin{figure}[htbp]
+\centering
+\small
+\begin{equation*}
+\begin{aligned}
+\Pr(Y_i = k)
+&=
+\frac{\exp(\eta_{ik})}
+{\sum_{j=1}^{K}\exp(\eta_{ij})}, \\
+\eta_{ik}
+&=
+\alpha_k
++
+\beta_{1k}\,\mathrm{RatingBin}_i
++
+\beta_{2k}\,\mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\} \\
+&\quad
++
+\beta_{3k}\,t_i
++
+\beta_{4k}\,\mathrm{RatingBin}_i
+\cdot
+\mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\}.
+\end{aligned}
+\end{equation*}
+\caption{Retained pooled multinomial opening-popularity model. Here, $Y_i$ denotes the opening category for month-by-time-control-by-rating-bin cell $i$, $t_i$ is the month index, and $k$ indexes the retained opening categories, including "Other".}
+\label{fig:eq-opening-popularity}
+\end{figure}
+```
+
+Robustness checks did not materially alter that decision. Allowing modest nonlinear flexibility in rating changed held-out fit only slightly, while greater flexibility in time did not improve performance enough to justify additional complexity. Varying the number of explicitly modeled openings produced the expected tradeoff between simpler and harder prediction problems, but did not change the broader retention logic. Full model comparisons and supporting diagnostics for this subsection are reported in @sec-appendix-c.
+
+<!--
+Opening popularity was modeled primarily as a compositional problem. The main inferential candidate was a pooled multinomial model fit to month-by-time-control-by-rating-bin cells, with openings aggregated into the twelve most common training period openings plus an "Other" category after sparse cells were excluded. This specification uses rating bin, time control, month index, and a rating-by-time-control interaction to predict opening composition. Per-opening negative binomial and weighted least squares models were also fit as lower-complexity sensitivity checks, but these models treat openings separately and therefore cannot coherently represent substitution across the opening set.
+
+
+
+
+Table \ref{tab:opening-popularity-model-comparison} compares held-out predictive error across the candidate model families. The pooled multinomial was retained as the primary model for opening popularity because it directly respects the compositional structure of opening choice while still providing competitive held-out performance. Its average per-game log loss on the held-out test set was 0.893 across 81 test rows. The negative binomial and weighted least squares specifications were useful for describing individual openings, but because they model by one opening at a time, they remain only as supporting checks.
+
+The retained multinomial model produced plausible and structured rating-conditioned opening profiles. Across both blitz and rapid, the "Other" category remained the most likely predicted outcome at every representative rating bin, and its fitted share increased steadily with rating. Among the explicitly modeled openings, lower-rated bins placed relatively more mass on openings such as the Philidor Defense, Scandinavian Defense, and Queen's Pawn Game, whereas higher-rated bins shifted more strongly toward the Caro-Kann Defense and the Accelerated London System. These patterns suggest that the retained model is capturing systematic variation by player strength rather than only fitting noise in sparse cells. Table \ref{tab:opening-popularity-rating-profile} summarizes the representative rating-conditioned predictions, and Table \ref{tab:opening-popularity-time-change} summarizes the largest predicted opening-share changes over time at rating 1600. In both blitz and rapid, the largest increase is absorbed by the residual "Other" category, while the largest named increase is the Accelerated London System and the largest named decrease is the French Defense: Knight Variation, indicating modest but directionally consistent compositional change over time.
+
+
+
+
+Robustness checks generally supported the retained multinomial specification. As shown in Table \ref{tab:opening-popularity-robustness}, allowing rating to vary nonlinearly with a spline slightly improved held-out fit relative to the linear rating form, whereas replacing linear time with a spline slightly worsened fit, so the simpler linear-time specification was retained. Varying the number of explicitly modeled openings produced expected results: Smaller category sets were easier to predict, while expanding from $k = 12$ to $k = 16$ increased held-out log loss. Where one-opening models were available, their estimated time-direction patterns also broadly agreed with the multinomial results for the most common blitz openings, which further increased confidence in the retained specification.
+
+
+
+
+All in all, these comparisons support the pooled multinomial as the primary model for opening popularity. It respects the compositional structure of opening choice, captures meaningful variation across rating and time control, and remains reasonably stable under alternative functional forms and threshold choices. The negative binomial and weighted share models remain valuable as supporting checks, but are not as carried forward as the main inferential basis for this model category.
+-->
+
+
+### Time Use {#sec-time-use-2}
+
+Time-use modeling was organized around two related targets— average time use and low-time frequency. Because these outcomes differ in scale and distribution, they were evaluated separately rather than forced into a single retained model family.
+
+For average time use, candidate specifications were compared at both the macro month level and the player-month level. At each level, additive models were compared against interaction specifications that allowed the relationship between rating and time use to vary by time control. The interaction specifications outperformed the corresponding additive alternatives at both analytic levels, even if the numerical improvement was modest. Those gains were directionally consistent and supported the conclusion that a common rating slope across formats was too restrictive for mean time-use modeling. The interaction forms were therefore retained as the primary models for average time use.
+
+```{=latex}
+\begin{figure}[htbp]
+\centering
+\small
+\begin{equation*}
+\begin{aligned}
+\mathrm{AvgTime}_i
+&=
+\beta_0
++
+\beta_1\,\mathrm{Rating}_i
++
+\beta_2\,\mathbf{1}\{\mathrm{tc}_i=\mathrm{Classical}\}
++
+\beta_3\,\mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\} \\
+&\quad
++
+\beta_4\,\mathrm{Rating}_i \cdot \mathbf{1}\{\mathrm{tc}_i=\mathrm{Classical}\}
++
+\beta_5\,\mathrm{Rating}_i \cdot \mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\}
++
+\varepsilon_i.
+\end{aligned}
+\end{equation*}
+\caption{Retained player-level mean time-use model. Here, $\mathrm{AvgTime}_i$ denotes average time spent for observation $i$, and the interaction terms allow the rating slope to vary by time control.}
+\label{fig:eq-timeuse-mean}
+\end{figure}
+```
+
+For low-time frequency, the main comparison was between a fractional quasibinomial specification and a binomial approximation. Since predictive performance did not clearly distinguish the two, model retention was decided on inferential suitability and outcome structure. The fractional quasibinomial was retained because it is better matched to a bounded proportion outcome observed at the cell level, especially when the outcome is concentrated near zero. The binomial approximation remains a useful sensitivity check, but not the primary retained model.
+
+```{=latex}
+\begin{figure}[htbp]
+\centering
+\small
+\begin{equation*}
+\begin{aligned}
+\operatorname{logit}\!\left(\mathbb{E}[L_i \mid X_i]\right)
+&=
+\beta_0
++
+\beta_1\,\mathrm{Rating}_i
++
+\beta_2\,\mathbf{1}\{\mathrm{tc}_i=\mathrm{Classical}\}
++
+\beta_3\,\mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\},
+\end{aligned}
+\end{equation*}
+\caption{Retained fractional low-time model. Here, $L_i \in [0,1]$ denotes low-time frequency for observation $i$.}
+\label{fig:eq-timeuse-lowtime}
+\end{figure}
+```
+
+Robustness checks supported both retention decisions. Alternative functional forms produced only limited changes in held-out fit, suggesting that the retained models were not being selected solely because of a narrow specification choice. Detailed comparisons and diagnostics for the time-use models are reported in @sec-appendix-d.
+
+<!--
+In contrast to the prior model categories, time-use modeling was organized around two related targets: average time use, and low-time frequency. For the former, candidate specifications were compared at both the macro month level and the player-month level. For the latter, the main comparison was between a fractional quasibinomial specification and a binomial approximation. Across these targets, retained models were chosen by balancing held-out predictive adequacy, interpretability, and robustness to modest specification changes.
+
+
+Table \ref{tab:timeuse-mean-model-comparison} compares held-out predictive error for the candidate mean time-use models. At both the macro month level and the player-month level, interaction specifications outperformed additive alternatives, so the interaction forms were retained as the primary models for average time use. The improvement in held-out fit was modest, but it was consistent across levels, which suggests that the relationship between skill and time use is not adequately captured by a single common rating slope across time controls. For this reason, the interaction specifications were carried forward as the main basis for subsequent inference on average time use.
+
+
+
+
+Low-time frequency required a different retained model because the outcome is bounded and concentrated near zero. Table \ref{tab:timeuse-lowtime-model-comparison} shows that the fractional quasibinomial and binomial approximation produced effectively identical held-out error. Accordingly, the fractional quasibinomial was retained as the primary specification because it is better aligned with the scale and distribution of the outcome, while the binomial approximation was retained only as a sensitivity check. In other words, predictive performance did not clearly distinguish the two models, so inferential suitability and outcome structure became the deciding considerations.
+
+Robustness checks did not meaningfully overturn either retention decision. For the retained mean models, Table \ref{tab:timeuse-mean-robustness} shows that replacing linear time with a spline at the macro level worsened held-out fit, which supports keeping the simpler linear-time form, while allowing a spline in rating at the player level produced only a small improvement, suggesting at most mild nonlinearity in the skill gradient. For the retained low-time model, Table \ref{tab:timeuse-lowtime-robustness} shows that replacing the linear rating term with a spline produced essentially no change in held-out error. In short, these checks indicate that the retained time-use models are reasonably stable and are not being driven by a restrictive, functional-form choice.
+
+
+
+Accordingly, interaction-based models were retained as the primary specifications for average time use, and the fractional quasibinomial model was retained as the primary specification for low-time frequency. Robust regression, quantile regression, phase-specific mean models, and the binomial approximation remain useful diagnostics and sensitivity checks, but they are not carried forward as the main inferential basis for this subsection.
+-->
+
+### Player Progression {#sec-player-progression-2}
+
+Player-progression models were designed to assess whether month-$t$ player behavior could be used to predict subsequent rating movement under a forward-in-time design. Three targets were retained for evaluation: 1-month rating change, 3-month rating change, and absolute 1-month rating change. The 3-month target is based on a smaller sample because it requires observing the same player several months later, whereas the 1-month targets preserve substantially more observations. This difference in available support is important context for later comparisons across targets.
+
+The main inferential candidate in this subsection was a player fixed-effects model fit to the player-month panel. This choice followed directly from the substantive goal of the task—  isolating within-player associations between current-month behavior and later rating movement. The baseline feature set included current rating, game volume, average moves, opening diversity, top-opening concentration, and an indicator for whether the player switched their most-played opening. Ridge regression and random forest models were also fit as predictive benchmarks.
+
+Across the retained targets, the player fixed-effects specifications provided the strongest overall combination of longitudinal appropriateness, inferential usefulness, and out-of-sample performance. This made the fixed-effects family the clearest retained direction for the progression task. The predictive benchmarks remained useful for comparison, but did not outperform the panel-based specification.
+
+```{=latex}
+\begin{figure}[htbp]
+\centering
+\small
+\begin{equation*}
+\begin{aligned}
+Y_{it}^{(h)}
+&=
+\alpha_i
++
+\beta_1\,\mathrm{AvgRating}_{it}
++
+\beta_2\,\mathrm{Games}_{it}
++
+\beta_3\,\mathrm{AvgMoves}_{it} \\
+&\quad
++
+\beta_4\,\mathrm{OpeningDiversity}_{it}
++
+\beta_5\,\mathrm{TopOpeningShare}_{it}
++
+\beta_6\,\mathrm{SwitchedOpening}_{it}
++
+\varepsilon_{it},
+\end{aligned}
+\end{equation*}
+\caption{Generic form of the retained player fixed-effects progression model, where $Y_{it}^{(h)} \in \{\Delta \mathrm{Rating}_{i,t+1}, \Delta \mathrm{Rating}_{i,t+3}, |\Delta \mathrm{Rating}_{i,t+1}|\}$.}
+\label{fig:eq-progression-fe-generic}
+\end{figure}
+```
+
+Sensitivity checks further supported that choice. Adding collapsed time-use features on the common-support sample did not improve performance enough to justify the accompanying loss of coverage, and allowing rating to vary nonlinearly produced only a small change relative to the baseline fit. Additional checks also suggested that absorbing common month shocks through added month fixed effects did not improve fit enough to outweigh the cost in simplicity. Full predictive comparisons and supporting robustness checks for this subsection are reported in @sec-appendix-e.
+
+<!--
+Player-progression models were designed to assess whether month-$t$ player behavior could be used to predict subsequent rating movement under a forward-in-time design. Three targets were retained: 1-month rating change, 3-month rating change, and absolute 1-month rating change. As shown in Table \ref{tab:progression-sample-sizes}, the 3-month target is substantially smaller because it requires observing the same player several months later, whereas the 1-month targets preserved the full, filtered sample. This difference in sample size is important for interpreting later comparisons across targets.
+
+
+
+The main inferential candidate in this subsection was a player fixed-effects model fit on the player-month panel. This choice reflects the goal of isolating within-player associations between current-month behavior and later rating movement rather than attributing progression differences to stable cross-player traits. The baselie feature set combined current rating, volume, and repertoire descriptors: average rating, games played, average moves, opening diversity, top-opening concentration, and whether the player switched their most-played opening. Ridge regression and random forest were also fit as predictive benchmarks. Table \ref{tab:progression-predictive-comparison} compares held-out performance across these model families for all three targets.
+
+
+
+Across all three targets, the player fixed-effects models outperformed both ridge regression and random forest on held-out data. The advantage was especially clear for the 3-month and absolute 1-month targets, where the gap in both RMSE and MAE was substantial. This made the player fixed-effects family the strongest overall modeling direction in this subsection, as not only was it the most appropriate model family for inference, but also the best-performing family among the tested benchmarks. Accordingly, player fixed effects were retained as the primary progression model.
+
+Additional sensitivity checks suggest that this retained choice is reasonably stable. Table \ref{tab:progression-fe-robustness} shows that adding collapsed time-use features on the common-support sample did not improve performance relative to the corresponding baseline fit, which indicates that the expanded feature set did not add enough information to offset the associated loss of coverage. The same table also shows that replacing the linear rating term with a spline produced only a very small improvement, suggesting that any nonlinearity in the rating gradient is modest at this stage and not large enough to overturn the simpler retained specification.
+
+A final structural check asked whether common month shocks should be absorbed directly through added month fixed effects. As shown in Table \ref{tab:progression-fe-structure}, doing so increased within-$R^2$ only slightly. This indicates that, while present, shared month-level variation wasn't strong enough to outweigh the usefulness of the simpler specification.The player-month variant was therefore kept solely as a supporting model.
+
+In summary, these comparisons support player fixed effects as the retained specification for player-progression models. They provide the strongest combination of longitudinal appropriateness, inferential usefulness, and held-out predictive performance, while also remaining reasonably stable under the specification changes examined here. Ridge regression and random forest remain useful predictive benchmarks, and the alternative fixed-effects variants remain informative sensitivities, but none are carried forward as the main inferential basis for this subsection.
+-->
+
+### Player Categorization {#sec-player-categorization-2}
+
+The goal of the player-categorization task was not to identify latent player "types" in a strong inferential sense, but to retain a descriptive specification that could summarize broad behavioral structure in player-month-time-control observations. For that reason, model retention in this subsection emphasized sample coverage, cluster balance, stability, and interpretability rather than formal inferential criteria.
+
+The candidate clustering sample provided complete coverage for repertoire features but only sparse overlap for stable time-use features in the joined design. This made time use unsuitable as a core clustering input in the retained specification. Instead, the retained feature set focused on standardized performance, outcome, repertoire, and activity variables, with time-use measures treated as potential downstream overlays rather than direct inputs to the clustering algorithm.
+
+Candidate descriptive approaches included $k$-means clustering, hierarchical clustering, Gaussian mixture clustering, and dimensionality-reduction methods used in a supporting role. The retained specification used $k$-means with $k = 6$ on the standardized core-plus-repertoire feature set. This solution was preferred because it provided a reasonably balanced partition, used the best-supported merged sample, and remained straightforward to interpret as a descriptive segmentation.
+
+```{=latex}
+\begin{figure}[htbp]
+\centering
+\small
+\begin{equation*}
+\begin{aligned}
+\min_{C_1,\dots,C_6}
+\sum_{k=1}^{6}
+\sum_{i \in C_k}
+\left\| x_i - \mu_k \right\|^2,
+\end{aligned}
+\end{equation*}
+\caption{Retained $k$-means clustering objective for player categorization. Here, $x_i \in \mathbb{R}^p$ denotes the standardized feature vector for observation $i$, $C_k$ denotes cluster $k$, and $\mu_k$ denotes the centroid of cluster $k$.}
+\label{fig:eq-categorization-kmeans}
+\end{figure}
+```
+
+The robustness and stability checks supported treating the retained clustering solution as useful, but only in a descriptive sense. Relative to the core-only alternative, the core-plus-repertoire feature set yielded a more balanced solution. Repeated $k$-means fits under the retained specification also converged to the same partition, indicating very strong initialization stability. At the same time, agreement with alternative clustering algorithms was only moderate, silhouette values were modest, and month-to-month agreement for overlapping players was limited. These diagnostics suggest that the retained segmentation captures real structure, but not sharply-separated or highly-persistent latent classes. Detailed specification, comparison, and stability diagnostics are reported in @sec-appendix-f.
+
+<!--
+The goal in this subsection was not to identify latent player “types” in a strong causal or inferential sense, but to retain a clustering specification that usefully summarizes broad behavioral variation across player-month-time-control observations. The retained clustering sample contained 156,901 observations from 25,547 players across 24 months and all three time-control buckets. As summarized in Table \ref{tab:categorization-spec}, repertoire features were available throughout this sample, whereas stable time-use coverage was sparse in the joined design. For that reason, the retained clustering specification was based on standardized core and repertoire variables only, with time-use treated as a possible downstream overlay rather than as an input to the clustering algorithm.
+
+The retained descriptive specification used $k$-means clustering with $k = 6$ on a 10-variable standardized feature set combining performance, outcome, and repertoire proxies. This choice was intended to produce an interpretable segmentation while avoiding the instability that can arise from very high-dimensional or sparsely observed feature spaces. The resulting solution was reasonably balanced, which makes it more useful for profile-based descriptive interpretation. Table \ref{tab:categorization-cluster-sizes} shows that cluster shares range from 0.112 to 0.217, so no single cluster dominates the retained segmentation, and neither is any cluster so small as to be descriptively unhelpful.
+
+The retained solution captures meaningful differences across both general performance characteristics and opening-related behavior. Table @ref(tab:categorization-performance-profiles) shows that the clusters differ in average rating, rating differential, average moves, and win rate, indicating that the segmentation is not simply reproducing a single skill ordering. Table \ref{tab:categorization-repertoire-profiles} shows additional differences in opening diversity, concentration, and opening-switching behavior, which suggests that repertoire structure is an important part of the retained clustering solution. In particular, some clusters are characterized by broad and diverse opening usage, whereas others are defined more by concentrated repertoires or high switching rates. Log-transformed activity measures were also included in the retained clustering design to reduce the influence of heavy-tailed count variables (see @sec-appendix).
+
+
+
+Robustness and stability checks support treating the retained solution as useful, but only in a descriptive sense. As shown in Table \ref{tab:categorization-robustness}, the richer core-plus-repertoire feature set produced a more balanced clustering solution than the core-only alternative. Repeated $k$-means fits under the retained specification converged to the same partition, indicating effectively perfect initialization stability. At the same time, agreement with hierarchical clustering and Gaussian mixture clustering was only moderate, silhouette values were modest, and month-to-month agreement for overlapping players was limited. So, while these diagnostics suggest that the retained segmentation captures real structure in the data, they also suggest that this structure is neither sharply separated nor highly persistent over time.
+
+
+
+Dimensionality-reduction methods were used in a supporting role rather than as retained models in their own right. PCA provided a more interpretable low-dimensional summary of the dominant axes of variation in the standardized feature space, while UMAP offered a nonlinear view of local neighborhood structure. Their role here is the same as that of the alternative clustering algorithms—  not to replace the retained clustering specification, but to help assess whether the descriptive segmentation corresponds to visible structure in the player-behavior space.
+
+Ultimately, the retained player-categorization model should be understood as a practical descriptive device. It provides a reproducible way to summarize broad playstyle variation across player-month observations, and the associated diagnostics suggest that the resulting clusters are usable as behavior profiles for downstream description. They are not, however, treated here as definitive latent classes or as a basis for inferential claims about underlying player types.
+
+-->
+
+### Summary {#sec-results-summary}
+
+The retained models define a common analytic strategy across our five empirical domains. Weighted linear and multinomial models were retained for metagame dynamics depending on whether the target was macro or compositional; a pooled multinomial model was retained for opening popularity; interaction-based mean models and a fractional quasibinomial were retained for time use; player fixed-effects models were retained for progression; and a k-means clustering solution based on core-plus-repertoire features was retained for player categorization.
+
+## Results {#sec-results}
+
+This section presents the substantive findings from the retained models described in @sec-modeling. The aim is no longer to compare candidate specifications, but to interpret the model outputs. Where relevant, the results are summarized using estimated effects, representative predicted values, and descriptive profile summaries. Additional robustness checks and supplemental diagnostics are reported in appendices @sec-appendix-c, @sec-appendix-d, @sec-appendix-e, and @sec-appendix-f.
+
+Accordingly, the section emphasizes interpretable summaries of model output, including estimated effects, representative predicted values, and descriptive profile summaries where appropriate. Inferential claims are drawn only from models retained for that purpose, while descriptive models are used more cautiously to summarize structure and variation in the data. Each subsection therefore focuses on what the retained model or models show, how large the relevant patterns are, and how confidently those patterns can be described.
+
+### Metagame Dynamics {#sec-metagame-dynamics-3}
+
+The retained metagame models indicate that the opening ecosystem broadened over the study period, although the magnitude of that broadening differed across time controls. The clearest evidence concerns concentration and diversity. Across formats, opening use became less concentrated and the effective number of openings increased, which together indicate gradual metagame diversification rather than convergence onto a narrower set of dominant choices.
+
+Table \ref{tab:metagame-macro-estimates} provides the main inferential summary for the retained macro models. In the baseline format, HHI concentration declined over time while the effective number of openings increased, and both trends were larger in rapid and classical than in blitz. These paired results are substantively aligned—  declining concentration and rising effective diversity describe the same underlying shift toward a broader opening ecosystem. The interaction terms matter here because the rate of diversification was not uniform across formats. Relative to blitz, the broadening was more pronounced in rapid and strongest in classical.
+
+<!--
+The intent of metagame-dynamics models was to characterize the state and evolution of the metagame across time and format. The model category accomplishes this on two levels. Aggregate metagame metrics (macro models) operate at the ecosystem level, while opening composition models help contextualize those aggregate shifts by clarifying what kinds of opening-level substitutions accompany them. The clearest changes concern concentration and diversity, while broader game-environment outcomes changed less consistently.
+
+ Need to rework tables so that the scientific notation convention is properly followed. 
+ -->
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{2.6cm} >{\raggedright\arraybackslash}p{3.5cm} >{\raggedleft\arraybackslash}p{2.1cm} >{\raggedleft\arraybackslash}p{1.8cm} >{\raggedleft\arraybackslash}X}
@@ -636,29 +1077,67 @@ Upset Rate & Rapid $\times$ Time & $7.481\times10^{-5}$ & $6.067\times10^{-5}$ &
 \end{xltabular}
 ```
 
-Opening composition required a different primary model because opening shares are inherently compositional. Table \ref{tab:metagame-composition-model-comparison} compares the descriptive share models with the multinomial specifications fit separately by time control. The multinomial models were retained as the primary inferential basis for compositional change because they respect the simplex structure of opening shares, whereas the weighted fixed-effects and GAM models treat openings one at a time and therefore cannot fully represent substitution across the opening set. Held-out log loss for the multinomial models was similar across formats at 0.910 in blitz, 0.923 in rapid, and 0.940 in classical, suggesting broadly comparable predictive performance across time controls. At the same time, the descriptive share models produced nearly identical held-out error in blitz and rapid, indicating that they capture much of the same visible trend structure even though they aren't appropriate as the main inferential basis.^[Lorem ipsum.]
+@fig-metagame-results makes the same pattern easier to see at the fitted-value level. The concentration curves trend downward over time, while the effective-diversity curves trend upward. The visual impression is not one of sudden disruption or rapid cycling, but of gradual structural widening across the two-year window. This is an important distinction: The metagame appears to be changing through accumulation and redistribution, *not* through abrupt replacement of one dominant opening by another.
+
+<!--
+Across formats, opening usage became less concentrated and more diverse (see table \ref{tab:metagame-macro-estimates}). This trend is present for all three time controls, though its magnitude differs. HHI fell over time in the baseline format (blitz), with an estimate of $-2.283 \times 10^{-6}, \ p = 0.002$; this trend was more pronounced in rapid ($-7.440 \times 10^{-6}, \ p < 0.001$) and classical ($-1.694 \times 10^{-5}, \ p = 0.022$). The number of effective openings ($N_\text{eff}$) rose over time in the baseline format, with an estimate of $0.1021, \ p = 0.002$; this trend was also more pronounced in rapid ($0.2411, \ p < 0.001$) and classical ($0.5556, \ p = 0.030$). These trends move in opposite-yet-complementary directions, as declining concentration and increasing diversity are expressing the same core pattern. Overall, the time-control interactions matter substantively, not just statistically.
+-->
+
+```{r Metagame Results Figure}
+#| label: fig-metagame-results
+#| fig-cap: "Predicted model values over time."
+#| fig-align: center
+
+p_macro_fit <- readRDS("Paper_files/figure-rds/p_macro_fit.rds")
+p_macro_fit
+```
+
+In contrast, the retained macro models provide much weaker evidence for systematic time trends in draw rate and average moves. Those outcomes appear comparatively stable over the sample window. Upset rate shows some evidence of a modest positive baseline trend, but that signal is weaker and less consistent across time controls than the concentration and diversity results. This suggests that metagame structure changed more clearly than the broader game environment did.
+
+The opening-composition results help clarify what kind of structural change underlies the macro broadening. The main pattern is not a dramatic surge by one named opening, but diffuse redistribution across the opening ecosystem. In particular, some of the increase appears to occur outside the most explicitly retained named openings, which is consistent with expansion into the long tail. The @sec-appendix-c comparisons support that interpretation. The main substantive conclusion is straightforward: The metagame broadened over time, and it did so in a way that differed meaningfully by format.
+
+Overall, the metagame results point to gradual diversification as opposed to convergence. The strongest findings concern ecosystem structure itself, where openings became less concentrated and more diverse, especially in slower formats. Changes in draw rate, upset rate, and average moves were much less pronounced, so the main story here is one of structural broadening in opening choice rather than broad transformation of all game-level outcomes.
+
+<!--
+Also present in table \ref{tab:metagame-macro-estimates} are outcomes. Draw rate and and average moves present little evidence of a systematic linear trend, the lowest p-value among their estimates being 0.215 for the baseline time trend. Upset rate shows some evidence of a positive baseline time trend ($9.540 \times 10^{-5}, \ p = 0.024$), but it's weak and not clearly generalized across formats; the non-baseline trends for upset rate have p-values more in line with draw rate and average moves. This is important, as it means that ecosystem structure changed more clearly than these broader, game-environment outcomes did.
+
+Whereas the aggregate metrics show that the metagame broadened, the composition model provides a way to describe which opening-share shifts underlie the aggregate broadening of the metagame. The compositional patterns were estimated separately by time control, allowing format-specific movement to be compared. Of note is that the composition findings are based on models with comparable performance across formats; table \ref{tab:metagame-composition-model-comparison} shows blitz, rapid, and classical to have held-out errors of 0.910, 0.923, and 0.940, respectively.
+
+The observed macro diversification reflects broad redistribution across the opening ecosystem rather than a single new opening taking over, and the compositional results reflect that: From table \ref{tab:metagame-multinomial-robustness}, "Other" is the top increase at every $k$, and a named opening decline remains visible once the retained opening set is sufficiently rich. The pattern is stable enough to suggest ecosystem-wide redistribution, as if "Other" gains share constantly, it means that the metagame isn't just rotating among a fixed set of dominant openings. Instead, some of the change is occurring outside the most explicitly-retained openings, which is consistent with diversification.
+
+The claim of broad redistribution is not merely a modeling artifact of a single cutoff. Table \ref{tab:metagame-multinomial-robustness} shows that "Other" remains the top increase, and the top negative mover stabilizes as French Defense: Knight Variation at $k = 12$ and $k = 16$. While log loss increases from 0.674 at $k = 8$ to 0.910 at $k = 12$ to 1.127 at $k = 16$, this is reflective of increasing $k$ making the prediction mechanically more difficult; the broad directional composition remains stable, even if log loss increases with $k$.
+
+All in all, at the ecosystem level, the metagame became less concentrated and more diverse over time, and those structural changes differed in severity across time controls. The opening-level evidence suggests that this broadening reflects diffuse substitution within the opening ecosystem rather than one simple adoption cycle. The clearest evidence concerns ecosystem structure, and not parallel shifts in draw rate or average moves.
+
+-->
+
+### Opening Popularity {#sec-opening-popularity-3}
+
+The retained opening-popularity model shows that opening choice varies systematically by both rating and time control. The clearest structure is not over calendar time, but across player-strength strata. Stronger players allocate less share to the most common named openings and more share to the residual “Other” category, indicating that higher-rated play is associated with a broader or less top-heavy opening distribution.
+
+@fig-opening-popularity-results provides the clearest visual summary of this pattern. In both blitz and rapid, the predicted share of the “Other” category increases with rating. This implies that stronger players devote a greater proportion of their games to openings outside the explicitly retained top set. That result does not mean the named openings cease to matter; rather, it means the opening ecosystem becomes less concentrated around the same small group of common labeled choices as rating rises.
+
+<!--
+The goal of the opening-popularity category of models is simple, because they're really just asking what factors impact opening choice. The retained pooled multinomial model was used so summarize opening popularity as a compositional outcome. This is a very similar approach to the opening-level method applied in @sec-metagame-dynamics-3, the difference being that the prior section was concerned only about explaining and supporting metagame-level drift, whereas this one explores opening choice in much more depth.
 
 
 
 
-Robustness checks suggest that the substantive multinomial conclusions are not highly sensitive to the exact top-$k$ threshold used to define the retained opening set. As shown in Table \ref{tab:metagame-multinomial-robustness}, increasing $k$ predictably worsened held-out log loss by making the prediction problem more demanding, but the broad directional pattern among the largest movers remained stable. In blitz, the pooled "Other" category consistently increased, while the main negative mover remained a French Defense variation once the retained opening set was sufficiently large. This suggests that the composition results reflect broad substitution within the opening ecosystem rather than dependence on a single threshold choice.
+Opening popularity is not random across skill levels or formats. This is best evidenced by table \ref{tab:opening-popularity-rating-profile}. As it's an aggregate, the residual "Other" category will almost always be dominant when modeling with a top-$k$ approach (for any reasonable $k$) simply due to the sheer quantity of named openings that see play at every level. Of greater importance are the share of the Other category, the share and presence of the top non-Other openings, and how those numbers change across skill and time control. Among explicitly-modeled openings, lower-rated bins show more mass on openings like the Philidor Defense, Scandinavian Defense, and Queen's Pawn Game, while higher-rated bins shift toward the Caro-Kann Defense and the Accelerated London System^[While the London System technically falls under the umbrella of the Queen's Pawn Game – they begin very similarly – it's often considered to be distinct from the more typical set of Queen's Pawn openings, which is why I'm using it as an example of a shift in opening popularity.] This supports the claim that opening popularity varies systematically by skill level, and that the pattern is visible across time controls.
 
+In both blitz and rapid, the dominant Other category grows with rating, from 0.732/0.768 at an 800 rating, 0.835/0.840 at 1600, and 0.892/0.877 at 2400 for blitz/rapid, respectively. This implies that higher-rated players place more of their opening mass outside the named top openings retained in the model. A rating pattern also presents itself where specific openings are concerned: For both blitz and rapid, the Philidor Defense is popular at 800, the Queen's Pawn Game is popular at 1600, and the Caro-Kann defense is popular at 2400. The identity and order of the top named openings is not identical, however, suggesting that time control shapes popularity within rating strata, even when the broader rating gradient is similar.
+--> 
 
+```{r Opening-Popularity Results Figure}
+#| label: fig-opening-popularity-results
+#| fig-cap: "Predicted share for choice openings."
+#| fig-align: center
 
+p_opening_rating <- readRDS("Paper_files/figure-rds/p_opening_rating.rds")
+p_opening_rating
+```
 
-Overall, these comparisons support a two-part retained strategy for metagame dynamics: weighted linear models for macro/ecosystem-level claims, and multinomial models for claims about opening substitution and compositional change. Weighted share regressions and GAMs remain useful descriptive checks, but won't be carried forward as the primary inferential basis for this model category.
-
-### Opening Popularity {#sec-opening-popularity-2}
-
-Opening popularity was modeled primarily as a compositional problem. The main inferential candidate was a pooled multinomial model fit to month-by-time-control-by-rating-bin cells, with openings aggregated into the twelve most common training period openings plus an "Other" category after sparse cells were excluded. This specification uses rating bin, time control, month index, and a rating-by-time-control interaction to predict opening composition. Per-opening negative binomial and weighted least squares models were also fit as lower-complexity sensitivity checks, but these models treat openings separately and therefore cannot coherently represent substitution across the opening set.
-
-
-
-
-Table \ref{tab:opening-popularity-model-comparison} compares held-out predictive error across the candidate model families. The pooled multinomial was retained as the primary model for opening popularity because it directly respects the compositional structure of opening choice while still providing competitive held-out performance. Its average per-game log loss on the held-out test set was 0.893 across 81 test rows. The negative binomial and weighted least squares specifications were useful for describing individual openings, but because they model by one opening at a time, they remain only as supporting checks.
-
-The retained multinomial model produced plausible and structured rating-conditioned opening profiles. Across both blitz and rapid, the "Other" category remained the most likely predicted outcome at every representative rating bin, and its fitted share increased steadily with rating. Among the explicitly modeled openings, lower-rated bins placed relatively more mass on openings such as the Philidor Defense, Scandinavian Defense, and Queen's Pawn Game, whereas higher-rated bins shifted more strongly toward the Caro-Kann Defense and the Accelerated London System. These patterns suggest that the retained model is capturing systematic variation by player strength rather than only fitting noise in sparse cells. Table \ref{tab:opening-popularity-rating-profile} summarizes the representative rating-conditioned predictions, and Table \ref{tab:opening-popularity-time-change} summarizes the largest predicted opening-share changes over time at rating 1600. In both blitz and rapid, the largest increase is absorbed by the residual "Other" category, while the largest named increase is the Accelerated London System and the largest named decrease is the French Defense: Knight Variation, indicating modest but directionally consistent compositional change over time.
-
+Table \ref{tab:opening-popularity-rating-profile} provides representative predictions that help anchor the figure. At lower rating levels, more share is allocated to openings such as the Philidor Defense, Scandinavian Defense, and Queen’s Pawn Game. At higher rating levels, the top named openings shift toward alternatives such as the Caro-Kann Defense and the Accelerated London System, while the residual category becomes increasingly dominant. The exact ordering differs somewhat by format, but the broader skill gradient is consistent: Opening popularity is strongly stratified by rating, and time control modifies that structure rather than replacing it.
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedleft\arraybackslash}p{1.8cm} >{\raggedright\arraybackslash}p{1.8cm} X X X}
@@ -689,56 +1168,162 @@ The retained multinomial model produced plausible and structured rating-conditio
 \end{xltabular}
 ```
 
-Robustness checks generally supported the retained multinomial specification. As shown in Table \ref{tab:opening-popularity-robustness}, allowing rating to vary nonlinearly with a spline slightly improved held-out fit relative to the linear rating form, whereas replacing linear time with a spline slightly worsened fit, so the simpler linear-time specification was retained. Varying the number of explicitly modeled openings produced expected results: Smaller category sets were easier to predict, while expanding from $k = 12$ to $k = 16$ increased held-out log loss. Where one-opening models were available, their estimated time-direction patterns also broadly agreed with the multinomial results for the most common blitz openings, which further increased confidence in the retained specification.
+
+Temporal changes are present, but modest in magnitude. The over-time movement in the retained multinomial model is directionally consistent with the broader metagame results from @sec-metagame-dynamics-3: the residual “Other” category tends to gain share, while the largest named increases and decreases are comparatively small. This again points away from a story of dramatic named-opening turnover and toward one of distributed compositional change.
+
+The substantive takeaway is that opening choice is highly structured, but most of that structure is cross-sectional as opposed to temporal. Rating and time control organize the opening landscape more strongly than month-to-month drift does. Over time, the opening ecosystem shifts, but the magnitude of that shift is much smaller than the difference between lower- and higher-rated opening distributions.
+
+<!--
+Changes in opening popularity over time are present, but modest in magnitude. As seen in table \ref{tab:opening-popularity-time-change} and elaborated on in @sec-metagame-dynamics-3, the time trend is directionally consistent across formats, the slight positive trend for Other pointing to broad compositional shifts rather than a dramatic takeover by one opening. In both formats, the largest named positive mover is the Accelerated London System, and the largest named negative mover is the French Defense: Knight Variation.
+
+The popularity results are based on the retained pooled multinomial model, which showed reasonable held-out performance on the test set with a log loss of 0.893 (see table \ref{tab:opening-popularity-model-comparison}). The one-opening models provide supporting checks, but the multinomial is the relevant basis for interpreting substitution across openings. Table \ref{tab:opening-popularity-robustness} tested linear and spline fits for both rating and time, as well as different top-$k$ thresholds. Allowing nonlinear rating slightly improved fit (log loss of 0.890 compared to 0.893), whereas allowing nonlinear time slightly worsened fit (0.895 compared to 0.893), though the improvements were incredibly marginal; the simpler linear-time specification is adequate for baseline reporting. As addressed in @sec-metagame-dynamics, an increase in $k$ saw a corresponding increase in log loss (0.666 for $k = 8$ up to 1.111 for $k = 16$), but this increase in modeling difficulty does not overturn the broad pattern of modest, consistent changes. As such, these conclusions don't appear to depend heavily on one narrow functional-form choice.
+
+Ultimately, these models found that opening popularity varies systematically by rating and time control. Higher-rated bins allocate more share outside the explicitly-retained top openings. Over time, the largest changes are modest but directionally consistent across blitz and rapid. The most visible temporal change is a rise in the residual other category alongside smaller named increases and decreases.
+-->
+
+### Time Use {#sec-time-use-3}
+
+The retained time-use models show that average pacing and low-time pressure capture related but distinct aspects of chess behavior. Across the retained specifications, the most consistent result is that the relationship between rating and average time use differs by time control, while low-time frequency rises with rating in every format.
+
+@fig-time-use-results summarizes these two patterns. For average time spent per move, the rating gradient is negative in blitz but positive in rapid and classical. Higher-rated players therefore move faster on average in blitz, but spend more time per move in slower formats. This means that there is no single monotone relationship between skill and pacing. Instead, the behavioral meaning of a player's use of time depends on the format in which it occurs.
+
+<!-- I do not yet have coefficients/model estimates, so currently have some placeholders 
+
+This category of models characterizes how players allocate time and experience time pressure across rating and time control; time use is being treated as a behavioral outcome that may vary by skill and the structure of the format. Two different models were retained for this category: interaction-based mean models for average time use, and a fractional quasibinomial model for low-time frequency. Average time use was modeled separately at the macro and player-month levels, but the results found in this section are taken from the player-level interaction model. Across the retained models, the clearest time-use pattern is a format-specific rating gradient: Stronger players use less time on average in blitz, but more in rapid and especially classical, implying that the relationship between skill and time allocation changes direction across formats. Low-time frequency was found to increase with rating in all formats, especially blitz.
 
 
 
 
-All in all, these comparisons support the pooled multinomial as the primary model for opening popularity. It respects the compositional structure of opening choice, captures meaningful variation across rating and time control, and remains reasonably stable under alternative functional forms and threshold choices. The negative binomial and weighted share models remain valuable as supporting checks, but are not as carried forward as the main inferential basis for this model category.
-
-### Time Use {#sec-time-use-2}
-
-In contrast to the prior model categories, time-use modeling was organized around two related targets: average time use, and low-time frequency. For the former, candidate specifications were compared at both the macro month level and the player-month level. For the latter, the main comparison was between a fractional quasibinomial specification and a binomial approximation. Across these targets, retained models were chosen by balancing held-out predictive adequacy, interpretability, and robustness to modest specification changes.
-
-
-Table \ref{tab:timeuse-mean-model-comparison} compares held-out predictive error for the candidate mean time-use models. At both the macro month level and the player-month level, interaction specifications outperformed additive alternatives, so the interaction forms were retained as the primary models for average time use. The improvement in held-out fit was modest, but it was consistent across levels, which suggests that the relationship between skill and time use is not adequately captured by a single common rating slope across time controls. For this reason, the interaction specifications were carried forward as the main basis for subsequent inference on average time use.
+Per table \ref{tab:timeuse-mean-model-comparison} interaction specifications were retained at both levels due to slightly superior WRMSE (0.143 vs. 0.149 for macro and 1.832 vs. 1.839 for player-month). Though it's a marginal improvement, it implies that a common rating effect across time controls was slightly inadequate. Therefore, the substantive results should be interpreted in terms of format-specific rating relationships rather than one universal rating slope. As shown in the format difference are much substantial when taking model estimates into account, with blitz at the lowest (4.390 seconds per move at 800, 3.834 at 1600, and 3.279 at 2400), classical at the highest (800: 10.573, 1600: 12.396, 2400: 14.220), and rapid somewhere in between (800: 6.448, 1600: 7.136, 2400: 7.824). Notably, blitz is the only of the three with a negative rating gradient, and classical presents a much wider confidence interval, suggesting greater uncertainty (see table \ref{tab:timeuse-player-mean-profile}).
 
 
 
 
-Low-time frequency required a different retained model because the outcome is bounded and concentrated near zero. Table \ref{tab:timeuse-lowtime-model-comparison} shows that the fractional quasibinomial and binomial approximation produced effectively identical held-out error. Accordingly, the fractional quasibinomial was retained as the primary specification because it is better aligned with the scale and distribution of the outcome, while the binomial approximation was retained only as a sensitivity check. In other words, predictive performance did not clearly distinguish the two models, so inferential suitability and outcome structure became the deciding considerations.
-
-Robustness checks did not meaningfully overturn either retention decision. For the retained mean models, Table \ref{tab:timeuse-mean-robustness} shows that replacing linear time with a spline at the macro level worsened held-out fit, which supports keeping the simpler linear-time form, while allowing a spline in rating at the player level produced only a small improvement, suggesting at most mild nonlinearity in the skill gradient. For the retained low-time model, Table \ref{tab:timeuse-lowtime-robustness} shows that replacing the linear rating term with a spline produced essentially no change in held-out error. In short, these checks indicate that the retained time-use models are reasonably stable and are not being driven by a restrictive, functional-form choice.
+Low-time frequency increases with rating in all three formats. As shown in table \ref{tab:timeuse-lowtime-profile} the absolute level of low-time pressure is highest in blitz, lower in rapid, and lowest in classical. For contrast, the lowest predicted low-time rate in blitz (0.0209 or 2.09% in the 800-rating bin) is greater than the highest predicted low-time rate in classical (0.0194 or 1.94% in the 2400-rating bin). Just as with the mean models, classical estimates are more uncertain than those for blitz and rapid. This means that, even though higher-rated players are more likely to enter low-time states in every format, the baseline prevalence of those states differs sharply across formats.
 
 
 
-Accordingly, interaction-based models were retained as the primary specifications for average time use, and the fractional quasibinomial model was retained as the primary specification for low-time frequency. Robust regression, quantile regression, phase-specific mean models, and the binomial approximation remain useful diagnostics and sensitivity checks, but they are not carried forward as the main inferential basis for this subsection.
-
-### Player Progression {#sec-player-progression-2}
-
-Player-progression models were designed to assess whether month-$t$ player behavior could be used to predict subsequent rating movement under a forward-in-time design. Three targets were retained: 1-month rating change, 3-month rating change, and absolute 1-month rating change. As shown in Table \ref{tab:progression-sample-sizes}, the 3-month target is substantially smaller because it requires observing the same player several months later, whereas the 1-month targets preserved the full, filtered sample. This difference in sample size is important for interpreting later comparisons across targets.
 
 
+In blitz, higher-rated players use less time on average but experience more low-time pressure. In rapid and classical, higher-rated players use more time on average but still experience more low-time pressure. From this, we can infer that low-time frequency is not merely an inverse of average pacing; it captures a distinct aspect of time-management behavior.
+-->
 
-The main inferential candidate in this subsection was a player fixed-effects model fit on the player-month panel. This choice reflects the goal of isolating within-player associations between current-month behavior and later rating movement rather than attributing progression differences to stable cross-player traits. The baselie feature set combined current rating, volume, and repertoire descriptors: average rating, games played, average moves, opening diversity, top-opening concentration, and whether the player switched their most-played opening. Ridge regression and random forest were also fit as predictive benchmarks. Table \ref{tab:progression-predictive-comparison} compares held-out performance across these model families for all three targets.
+```{r Time-Use Results Figure}
+#| label: fig-time-use-results
+#| fig-cap: "Predicted time-use values across rating bins."
+#| fig-align: center
 
+p_time_panels <- readRDS("Paper_files/figure-rds/p_time_panels.rds")
+p_time_panels
+```
 
+The size of the format differences is substantial. Blitz remains the fastest format across the rating range, classical the slowest, and rapid, as usual, falls somewhere in between. More importantly, the slope changes sign across formats, which supports treating time control as more than a nuisance adjustment; it changes the way player strength relates to deliberation time. A single common rating effect would have obscured this distinction.
 
-Across all three targets, the player fixed-effects models outperformed both ridge regression and random forest on held-out data. The advantage was especially clear for the 3-month and absolute 1-month targets, where the gap in both RMSE and MAE was substantial. This made the player fixed-effects family the strongest overall modeling direction in this subsection, as not only was it the most appropriate model family for inference, but also the best-performing family among the tested benchmarks. Accordingly, player fixed effects were retained as the primary progression model.
+The low-time results tell a different-yet-complementary story. Low-time frequency increases with rating in blitz, rapid, and classical alike. The baseline prevalence of low-time states still differs sharply by format – with blitz much higher than rapid or classical – but within each format, stronger players are predicted to enter low-time situations more often. This is important because it shows that low-time frequency is not merely the inverse of average pace. A player can move faster on average and still enter acute time pressure more often, or spend more time on average and also enter low-time states more often.
 
-Additional sensitivity checks suggest that this retained choice is reasonably stable. Table \ref{tab:progression-fe-robustness} shows that adding collapsed time-use features on the common-support sample did not improve performance relative to the corresponding baseline fit, which indicates that the expanded feature set did not add enough information to offset the associated loss of coverage. The same table also shows that replacing the linear rating term with a spline produced only a very small improvement, suggesting that any nonlinearity in the rating gradient is modest at this stage and not large enough to overturn the simpler retained specification.
+These results suggest that time management is multi-dimensional; average pace reflects one aspect of behavior, but low-time exposure reflects another. In blitz, stronger players appear to play faster on average while also entering low-time states more often. In rapid and classical, stronger players spend more time on average yet still show higher low-time frequency. This combination implies that stronger players may be allocating time more selectively rather than simply playing uniformly faster or slower.
 
-A final structural check asked whether common month shocks should be absorbed directly through added month fixed effects. As shown in Table \ref{tab:progression-fe-structure}, doing so increased within-$R^2$ only slightly. This indicates that, while present, shared month-level variation wasn't strong enough to outweigh the usefulness of the simpler specification.The player-month variant was therefore kept solely as a supporting model.
+<!--
+Though no relevant tables are present for the sake of brevity, it should be noted that interaction specifications were retained for the mean models because a common rating slope was inadequate. The negative baseline rating effect for blitz and positive rapid interaction were directionally consistent across supporting models. The classical interaction, however, was less stable and should therefore be interpreted more cautiously.
 
-In summary, these comparisons support player fixed effects as the retained specification for player-progression models. They provide the strongest combination of longitudinal appropriateness, inferential usefulness, and held-out predictive performance, while also remaining reasonably stable under the specification changes examined here. Ridge regression and random forest remain useful predictive benchmarks, and the alternative fixed-effects variants remain informative sensitivities, but none are carried forward as the main inferential basis for this subsection.
+On the whole, time-use behavior varies strongly across both rating and format. The relationship between rating and average time-use is format-specific, whereas low-time frequency rises with rating in all formats. Faster formats produce substantially more time pressure overall, which is expected. Therefore, average pace and acute time pressure should be treated as related-yet-distinct aspects of player behavior.
+-->
 
-### Player Categorization {#sec-player-categorization-2}
+### Player Progression {#sec-player-progression-3}
+<!--
+The retained player fixed-effects models are being used to assess whether within-player changes in current-month behavior are associated with later rating movement, and if so, which behaviors are associated with what kinds of change (i.e., rating gain/loss). Three targets were retained: 1-month rating change, 3-month change, and absolute 1-month change. The signed (non-absolute) targets ask whether a predictor relates to a player moving up or down in rating, with positive values reflecting positive increases and vice versa. In contrast, the absolute target removes direction, and asks whether a predictor relates to moving more or less, regardless of direction—  positive values reflect larger changes, while negative ones imply smaller ones. 
+-->
 
-The goal in this subsection was not to identify latent player “types” in a strong causal or inferential sense, but to retain a clustering specification that usefully summarizes broad behavioral variation across player-month-time-control observations. The retained clustering sample contained 156,901 observations from 25,547 players across 24 months and all three time-control buckets. As summarized in Table \ref{tab:categorization-spec}, repertoire features were available throughout this sample, whereas stable time-use coverage was sparse in the joined design. For that reason, the retained clustering specification was based on standardized core and repertoire variables only, with time-use treated as a possible downstream overlay rather than as an input to the clustering algorithm.
+The retained player fixed-effects models relate within-player month-to-month behavior to later rating movement. Across the signed-change targets, the clearest positive predictors of later rating gain are average moves, opening diversity, and switching one’s most-played opening. In contrast, game volume and top-opening concentration show weaker and less consistent evidence.
 
-The retained descriptive specification used $k$-means clustering with $k = 6$ on a 10-variable standardized feature set combining performance, outcome, and repertoire proxies. This choice was intended to produce an interpretable segmentation while avoiding the instability that can arise from very high-dimensional or sparsely observed feature spaces. The resulting solution was reasonably balanced, which makes it more useful for profile-based descriptive interpretation. Table \ref{tab:categorization-cluster-sizes} shows that cluster shares range from 0.112 to 0.217, so no single cluster dominates the retained segmentation, and neither is any cluster so small as to be descriptively unhelpful.
+Table \ref{tab:progression-fe-results} provides the central inferential summary. For both the 1-month and 3-month signed targets, higher current average rating is associated with more negative subsequent signed rating change, while average moves, opening diversity, and switching the most-played opening are positively associated with later change. These effects are directionally consistent across the two signed targets, though the estimated magnitudes differ. Conversely, games played and top-opening share do not show comparably stable evidence across models.
 
-The retained solution captures meaningful differences across both general performance characteristics and opening-related behavior. Table @ref(tab:categorization-performance-profiles) shows that the clusters differ in average rating, rating differential, average moves, and win rate, indicating that the segmentation is not simply reproducing a single skill ordering. Table \ref{tab:categorization-repertoire-profiles} shows additional differences in opening diversity, concentration, and opening-switching behavior, which suggests that repertoire structure is an important part of the retained clustering solution. In particular, some clusters are characterized by broad and diverse opening usage, whereas others are defined more by concentrated repertoires or high switching rates. Log-transformed activity measures were also included in the retained clustering design to reduce the influence of heavy-tailed count variables (see @sec-appendix).
+```{=latex}
+\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.4cm} >{\raggedright\arraybackslash}p{2.3cm} >{\raggedleft\arraybackslash}p{1.6cm} >{\raggedleft\arraybackslash}p{2.2cm} >{\raggedleft\arraybackslash}X}
+\caption{Coefficient estimates from the retained player fixed-effects progression models.}\label{tab:progression-fe-results}\\
+\toprule
+\textbf{Predictor} & \textbf{Target} & \textbf{Estimate} & \textbf{95\% CI} & \textbf{\textit{p}-Value} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Predictor} & \textbf{Target} & \textbf{Estimate} & \textbf{95\% CI} & \textbf{\textit{p}-Value} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{5}{r}{\small\emph{Continued...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+Current Average Rating & 1-Month Change & -0.469 & [-0.511, -0.427] & $< 0.001$ \\
+Games Played & 1-Month Change & -0.00295 & [-0.0101, 0.00420] & 0.398 \\
+Average Moves & 1-Month Change & 1.403 & [1.213, 1.594] & $< 0.001$ \\
+Opening Diversity & 1-Month Change & 0.162 & [0.129, 0.194] & $< 0.001$ \\
+Top-Opening Share & 1-Month Change & 6.697 & [-3.782, 17.176] & 0.196 \\
+Switched Most-Played Opening & 1-Month Change & 2.722 & [1.035, 4.409] & 0.003 \\
+
+Current Average Rating & 3-Month Change & -0.800 & [-0.859, -0.740] & $< 0.001$ \\
+Games Played & 3-Month Change & 0.00345 & [-0.00693, 0.0138] & 0.494 \\
+Average Moves & 3-Month Change & 1.112 & [0.870, 1.353] & $< 0.001$ \\
+Opening Diversity & 3-Month Change & 0.0614 & [0.0165, 0.106] & 0.010 \\
+Top-Opening Share & 3-Month Change & -3.668 & [-17.236, 9.901] & 0.577 \\
+Switched Most-Played Opening & 3-Month Change & 2.419 & [0.249, 4.589] & 0.031 \\
+
+Current Average Rating & Absolute 1-Month Change & 0.00027 & [-0.0107, 0.0112] & 0.959 \\
+Games Played & Absolute 1-Month Change & 0.00110 & [-0.00469, 0.00689] & 0.694 \\
+Average Moves & Absolute 1-Month Change & -0.334 & [-0.503, -0.165] & $< 0.001$ \\
+Opening Diversity & Absolute 1-Month Change & -0.0712 & [-0.0918, -0.0505] & $< 0.001$ \\
+Top-Opening Share & Absolute 1-Month Change & -5.837 & [-13.635, 1.961] & 0.133 \\
+Switched Most-Played Opening & Absolute 1-Month Change & -3.755 & [-4.344, -3.166] & $< 0.001$ \\
+\end{xltabular}
+```
+
+@fig-player-progression-results makes the main contrast clearer. Among the predictors with the strongest signal, average moves, opening diversity, and switching one’s most-played opening are favorable for signed rating change, whereas current rating is negatively associated with later signed movement. The negative current-rating effect is not especially surprising, as players who are already at higher ratings have less room for short-run upward movement and may also regress more toward their local equilibrium level. The more behaviorally interesting findings concern game complexity and repertoire adjustment.
+
+<!--
+Table \ref{tab:progression-fe-results} shows that, for signed targets, higher current rating is associated with more negative subsequent rating change. Conversely, average moves, opening diversity, and switching one's most-played opening are positively associated with rating signed rating change. For the absolute-change target, average moves, opening diversity, and opening switching are all negatively associated with month-to-month volatility.
+-->
+```{r Player-Progression Results Figure}
+#| label: fig-player-progression-results
+#| fig-cap: "Predicted coefficients for the fixed-effects models"
+#| fig-align: center
+
+p_player_coef <- readRDS("Paper_files/figure-rds/p_player_coef.rds")
+p_player_coef
+```
+
+The absolute-change model helps interpret those signed results. None of the favorable signed predictors is positively associated with greater movement magnitude. If anything, the coefficients for average moves, opening diversity, and switching suggest smaller absolute month-to-month movement. This is salient because it weakens the idea that the favorable signed associations are simply artifacts of noisier or more unstable play; the positive progression signals do not appear to be coming from predictors that merely increase rating volatility.
+
+Substantively, the results point toward adaptation and complexity rather than volume alone. Months with longer games, broader repertoires, and a change in the most-played opening are associated with more favorable later signed rating movement. Those same predictors do not point toward larger absolute swings. Meanwhile, raw game count is weak and inconclusive once these other behavioral measures are included in the fixed-effects design. The implication is not that activity is irrelevant, but that simple volume carries limited additional signal once more behaviorally informative predictors are present.
+
+These progression results should still be interpreted as within-player associations, not as causal effects. Even so, the pattern is notably consistent: Richer and less static opening behavior, along with greater game complexity, is more closely linked to later rating gains than sheer activity volume is. That makes progression look less like a pure accumulation process and more like an adaptive one.
+
+<!--
+In concert, the signed and absolute targets paint a very consistent, very interesting picture. Among the predictors that matter, none are linked to greater movement magnitude; the signal is consistently toward smaller movement magnitude, with the weaker ones uncertain, but never clearly positive. This is particularly relevant when it comes to favorable (positive) signed predictors, as it means that every favorable predictor is associated with less absolute movement.
+
+Table \ref{tab:progression-fe-contrasts} helps convert the fixed-effect estimates into practical differences across representative predictor values. It compares continuous predictors are compared at the 25th and 75th percentiles, while the switching indicator is compared from 0 to 1. All magnitude patterns are directionally consistent with the coefficient table. Moving from lower to higher values of average moves corresponds to a meaningful increase in signed rating change. To a degree, this is also true of opening diversity, with the only difference being its modest range at the 3-month target compared to its 1-month counterpart (decreases from [6.052, 8.816] to [0.915, 4.852]). Switching the most-played opening is a smaller but still impactful contrast. All three are associated with smaller absolute movement. 
+
+Of particular note is current average rating, as its signed intervals are orders of magnitude larger than any of the other predictors. This does not imply that its importance as a predictor is equally large, however; rather, it's on a very wide scale, which impacts the size of the interval. As an example, for 1-month change, the 25th percentile rating is ~1272, while the 75th is ~1798, for a difference of ~526 rating points. Multiply that by the coefficient of -0.469 and you get a contrast near $-0.469 \times 526 \approx -247$. Compare this to average moves, where the 25th–75th gap is only about 7 moves, opening diversity where it's ~46 units, or top-opening share, where it's less than 0.1, and you'll see why the contrast band for average rating is so much larger.
+
+Not all retained predictors show equally clear evidence; games played and top-opening share stand out for being weak or ambiguous predictors. Refer back to table \ref{tab:progression-fe-results}. Neither have a p-value below 0.1 for any of the targets, and most are many times that. Their poor evaluation is further reinforced by table \ref{tab:progression-fe-contrasts}, as still neither have a confidence interval that precludes zero. Current average rating is of note for being the only predictor whose statistical significance crosses a meaningful alpha of 0.05 between models, with a p-value of 0.959 for the absolute target. This is expected, however, and actually a good sign that the models are on the right track. The Lichess rating system is designed so that a player's current rating is already a good summary of expected strength, so we actually shouldn't expect that it should predict larger or smaller absolute next-month movement; it would be more worrying if the coefficient weren't centered near 0.
+
+It's important to remember that the fixed-effect design isolates within-player association; these targets are being modeled as within-player associations, not as cross-sectional differences between players. The models are estimated on large within-player panels in order to support stable coefficient estimation. Note that the signed-change models explain substantially more within-player variation than the absolute-change model – within-$R^2$ values of 0.270, 0.453, and 0.004 for 1-month, 3-month, and 1-month absolute, respectively – so the latter is best treated as a supporting magnitude benchmark rather than the main target.
+
+Within players, months characterized by higher move-count games, broader opening diversity, and switching one's most-played opening are associated with more favorable next-month rating movement. Those same predictors are not associated with larger movement magnitude in the absolute model, but are instead most often associated with smaller absolute change. By contrast, games played and top-opening share do not show comparably stable evidence in the retained fixed-effects specification. These results suggest that the behavioral signals most associated with later progression concern game complexity, repertoire breadth, and active repertoire adjustment rather than simple activity volume or repertoire concentration alone.
+-->
+
+### Player Categorization {#sec-player-categorization-3}
+
+The retained clustering results are descriptive rather than inferential, so the goal of this subsection is to summarize recurring behavioral profiles more than anything else. Even with that caution in place, however, the retained categorization solution reveals meaningful structure in the player-month data. The clusters differ along several behavioral axes at once, including rating, rating differential, game length, repertoire breadth, opening concentration, and opening switching.
+
+Tables \ref{tab:categorization-performance-profiles} and \ref{tab:categorization-repertoire-profiles} summarize the core descriptive profiles. The clusters are not simply a relabeling of average rating. Instead, they combine performance, repertoire, and game-structure features into distinct configurations. For example, one cluster is characterized by wide repertoires and relatively high activity, another by narrow repertoires and lower ratings, another by unusually high switching behavior, and others by different combinations of longer games, stronger outcomes, or greater opening concentration. In short, the retained solution differentiates behavior across multiple dimensions instead of simply reducing all variation to a single skill continuum.
+
+<!--
+Though it has been mentioned multiple times in @sec-player-categorization-2, it is important to stress that no player-categorization model is fit for inference; even the retained $k$-means solution should only be treated as a descriptive summary of behavioral variation across player-month observations. The point here is not to treat the clusters as latent causal types, but to describe recurring patterns in performance, repertoire structure, and activity. The results below use standardized cluster centers, time-control distributions, and month-to-month persistence summaries.
+-->
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedleft\arraybackslash}p{1.4cm} >{\raggedleft\arraybackslash}p{1.6cm} >{\raggedleft\arraybackslash}p{2.0cm} >{\raggedleft\arraybackslash}p{2.2cm} >{\raggedleft\arraybackslash}p{1.8cm} >{\raggedleft\arraybackslash}X}
@@ -798,367 +1383,14 @@ The retained solution captures meaningful differences across both general perfor
 \end{xltabular}
 ```
 
-Robustness and stability checks support treating the retained solution as useful, but only in a descriptive sense. As shown in Table \ref{tab:categorization-robustness}, the richer core-plus-repertoire feature set produced a more balanced clustering solution than the core-only alternative. Repeated $k$-means fits under the retained specification converged to the same partition, indicating effectively perfect initialization stability. At the same time, agreement with hierarchical clustering and Gaussian mixture clustering was only moderate, silhouette values were modest, and month-to-month agreement for overlapping players was limited. So, while these diagnostics suggest that the retained segmentation captures real structure in the data, they also suggest that this structure is neither sharply separated nor highly persistent over time.
+Several broad contrasts stand out. Clusters 1 and 2 function as useful foils: The former is associated with a broader repertoire and stronger overall profile, whereas the latter is narrower, lower rated, and associated with shorter games. Cluster 3 is especially notable for very high switching, while cluster 6 is more concentrated and stable in its opening behavior. Clusters 4 and 5 both include stronger players, but differ in the kind of behavior they summarize. These distinctions support the notion that the retained clustering solution is capturing multiple styles of engagement rather than a simple ranking.
 
+The cluster distributions also vary by time control. Some profiles are more common in blitz, and others in classical, though rapid tends to be more evenly distributed. These differences should not be over-read, especially where classical support is thinner, but they do suggest that format is part of the behavioral structure the clustering solution is capturing. The profiles are therefore not purely abstract player labels; they are partly shaped by the time-control context in which behavior is observed.
 
+At the same time, the clusters are not persistent enough to justify treating them as fixed or latent identities. The month-to-month summaries show continuity, but only to an extent. Some clusters are more persistent than others, and the transition structure is not random, but the broader pattern is still one of movement as opposed to permanence. This is why the most defensible interpretation is that the clusters represent recurring behavioral states or configurations.
 
-Dimensionality-reduction methods were used in a supporting role rather than as retained models in their own right. PCA provided a more interpretable low-dimensional summary of the dominant axes of variation in the standardized feature space, while UMAP offered a nonlinear view of local neighborhood structure. Their role here is the same as that of the alternative clustering algorithms—  not to replace the retained clustering specification, but to help assess whether the descriptive segmentation corresponds to visible structure in the player-behavior space.
-
-Ultimately, the retained player-categorization model should be understood as a practical descriptive device. It provides a reproducible way to summarize broad playstyle variation across player-month observations, and the associated diagnostics suggest that the resulting clusters are usable as behavior profiles for downstream description. They are not, however, treated here as definitive latent classes or as a basis for inferential claims about underlying player types.
-
+Said interpretation is consistent with the rest of the paper’s results. The opening ecosystem broadens over time, opening choice varies with strength and format, time use is multi-dimensional, and progression is associated with adaptation rather than rigid repetition. Against that background, it makes sense that player-month observations would also fall into recurring-yet-fluid behavioral profiles rather than sharply-bounded and permanent classes.
 <!--
-\newpage
--->
-
-## Results {#sec-results}
-
-<!-- Describe the results that you received from the methods described earlier. -->
-
-This section presents the substantive findings from the retained models identified in @sec-modeling. The aim is no longer to compare candidate specifications, but to interpret what the retained models suggest about chess behavior and structure across the main domains of the project: metagame dynamics, opening popularity, time use, player progression, and player categorization.
-
-Accordingly, the section emphasizes interpretable summaries of model output, including estimated effects, representative predicted values, and descriptive profile summaries where appropriate. Inferential claims are drawn only from models retained for that purpose, while descriptive models are used more cautiously to summarize structure and variation in the data. Each subsection therefore focuses on what the retained model or models show, how large the relevant patterns are, and how confidently those patterns can be described.
-
-### Metagame Dynamics {#sec-metagame-dynamics-3}
-
-The intent of metagame-dynamics models was to characterize the state and evolution of the metagame across time and format. The model category accomplishes this on two levels. Aggregate metagame metrics (macro models) operate at the ecosystem level, while opening composition models help contextualize those aggregate shifts by clarifying what kinds of opening-level substitutions accompany them. The clearest changes concern concentration and diversity, while broader game-environment outcomes changed less consistently.
-
-```{=latex}
-\begin{figure}[htbp]
-\centering
-\small
-\begin{equation*}
-\begin{aligned}
-Y_{tc,t}
-&=
-\beta_0
-+
-\beta_1 t
-+
-\beta_2 \,\mathbf{1}\{\mathrm{tc}=\mathrm{Classical}\}
-+
-\beta_3 \,\mathbf{1}\{\mathrm{tc}=\mathrm{Rapid}\} \\
-&\quad
-+
-\beta_4 \, t \cdot \mathbf{1}\{\mathrm{tc}=\mathrm{Classical}\}
-+
-\beta_5 \, t \cdot \mathbf{1}\{\mathrm{tc}=\mathrm{Rapid}\}
-+
-\varepsilon_{tc,t}.
-\end{aligned}
-\end{equation*}
-\caption{Retained macro metagame model. Here, $Y_{tc,t}$ denotes a month-by-time-control metagame outcome, such as HHI concentration, effective number of openings, draw rate, upset rate, or average moves. Inference used Newey--West heteroskedasticity- and autocorrelation-consistent standard errors.}
-\label{fig:eq-metagame-macro}
-\end{figure}
-```
-
-```{=latex}
-\begin{figure}[htbp]
-\centering
-\small
-\begin{equation*}
-\begin{aligned}
-\Pr(Y_t = k)
-&=
-\frac{\exp(\eta_{k,t})}
-{\sum_{j=1}^{K}\exp(\eta_{j,t})}, \\
-\eta_{k,t}
-&=
-\alpha_k + \beta_k t,
-\qquad k=1,\dots,K.
-\end{aligned}
-\end{equation*}
-\caption{Retained multinomial metagame-composition model, fit separately by time control. Here, $Y_t$ denotes the opening category at month $t$, and $k$ indexes the retained opening categories.}
-\label{fig:eq-metagame-multinomial}
-\end{figure}
-```
-
-
-Across formats, opening usage became less concentrated and more diverse (see table \ref{tab:metagame-macro-estimates}). This trend is present for all three time controls, though its magnitude differs. HHI fell over time in the baseline format (blitz), with an estimate of $-2.283 \times 10^{-6}, \ p = 0.002$; this trend was more pronounced in rapid ($-7.440 \times 10^{-6}, \ p < 0.001$) and classical ($-1.694 \times 10^{-5}, \ p = 0.022$). The number of effective openings ($N_\text{eff}$) rose over time in the baseline format, with an estimate of $0.1021, \ p = 0.002$; this trend was also more pronounced in rapid ($0.2411, \ p < 0.001$) and classical ($0.5556, \ p = 0.030$). These trends move in opposite-yet-complementary directions, as declining concentration and increasing diversity are expressing the same core pattern. Overall, the time-control interactions matter substantively, not just statistically.
-
-```{r Metagame Results Figure}
-#| label: fig-metagame-results
-#| fig-cap: "Predicted model values over time."
-#| fig-align: center
-
-p_macro_fit <- readRDS("Paper_files/figure-rds/p_macro_fit.rds")
-p_macro_fit
-```
-
-Also present in table \ref{tab:metagame-macro-estimates} are outcomes. Draw rate and and average moves present little evidence of a systematic linear trend, the lowest p-value among their estimates being 0.215 for the baseline time trend. Upset rate shows some evidence of a positive baseline time trend ($9.540 \times 10^{-5}, \ p = 0.024$), but it's weak and not clearly generalized across formats; the non-baseline trends for upset rate have p-values more in line with draw rate and average moves. This is important, as it means that ecosystem structure changed more clearly than these broader, game-environment outcomes did.
-
-Whereas the aggregate metrics show that the metagame broadened, the composition model provides a way to describe which opening-share shifts underlie the aggregate broadening of the metagame. The compositional patterns were estimated separately by time control, allowing format-specific movement to be compared. Of note is that the composition findings are based on models with comparable performance across formats; table \ref{tab:metagame-composition-model-comparison} shows blitz, rapid, and classical to have held-out errors of 0.910, 0.923, and 0.940, respectively.
-
-The observed macro diversification reflects broad redistribution across the opening ecosystem rather than a single new opening taking over, and the compositional results reflect that: From table \ref{tab:metagame-multinomial-robustness}, "Other" is the top increase at every $k$, and a named opening decline remains visible once the retained opening set is sufficiently rich. The pattern is stable enough to suggest ecosystem-wide redistribution, as if "Other" gains share constantly, it means that the metagame isn't just rotating among a fixed set of dominant openings. Instead, some of the change is occurring outside the most explicitly-retained openings, which is consistent with diversification.
-
-<!-- Potentially move held-out errors into a new paragraph here and add additional format-specific mover output (additional model stuff) later. -->
-
-The claim of broad redistribution is not merely a modeling artifact of a single cutoff. Table \ref{tab:metagame-multinomial-robustness} shows that "Other" remains the top increase, and the top negative mover stabilizes as French Defense: Knight Variation at $k = 12$ and $k = 16$. While log loss increases from 0.674 at $k = 8$ to 0.910 at $k = 12$ to 1.127 at $k = 16$, this is reflective of increasing $k$ making the prediction mechanically more difficult; the broad directional composition remains stable, even if log loss increases with $k$.
-
-All in all, at the ecosystem level, the metagame became less concentrated and more diverse over time, and those structural changes differed in severity across time controls. The opening-level evidence suggests that this broadening reflects diffuse substitution within the opening ecosystem rather than one simple adoption cycle. The clearest evidence concerns ecosystem structure, and not parallel shifts in draw rate or average moves.
-
-### Opening Popularity {#sec-opening-popularity-3}
-
-The goal of the opening-popularity category of models is simple, because they're really just asking what factors impact opening choice. The retained pooled multinomial model was used so summarize opening popularity as a compositional outcome. This is a very similar approach to the opening-level method applied in @sec-metagame-dynamics-3, the difference being that the prior section was concerned only about explaining and supporting metagame-level drift, whereas this one explores opening choice in much more depth.
-
-```{=latex}
-\begin{figure}[htbp]
-\centering
-\small
-\begin{equation*}
-\begin{aligned}
-\Pr(Y_i = k)
-&=
-\frac{\exp(\eta_{ik})}
-{\sum_{j=1}^{K}\exp(\eta_{ij})}, \\
-\eta_{ik}
-&=
-\alpha_k
-+
-\beta_{1k}\,\mathrm{RatingBin}_i
-+
-\beta_{2k}\,\mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\} \\
-&\quad
-+
-\beta_{3k}\,t_i
-+
-\beta_{4k}\,\mathrm{RatingBin}_i
-\cdot
-\mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\}.
-\end{aligned}
-\end{equation*}
-\caption{Retained pooled multinomial opening-popularity model. Here, $Y_i$ denotes the opening category for month-by-time-control-by-rating-bin cell $i$, $t_i$ is the month index, and $k$ indexes the retained opening categories, including "Other".}
-\label{fig:eq-opening-popularity}
-\end{figure}
-```
-
-
-Opening popularity is not random across skill levels or formats. This is best evidenced by table \ref{tab:opening-popularity-rating-profile}. As it's an aggregate, the residual "Other" category will almost always be dominant when modeling with a top-$k$ approach (for any reasonable $k$) simply due to the sheer quantity of named openings that see play at every level. Of greater importance are the share of the Other category, the share and presence of the top non-Other openings, and how those numbers change across skill and time control. Among explicitly-modeled openings, lower-rated bins show more mass on openings like the Philidor Defense, Scandinavian Defense, and Queen's Pawn Game, while higher-rated bins shift toward the Caro-Kann Defense and the Accelerated London System^[While the London System technically falls under the umbrella of the Queen's Pawn Game – they begin very similarly – it's often considered to be distinct from the more typical set of Queen's Pawn openings, which is why I'm using it as an example of a shift in opening popularity.] This supports the claim that opening popularity varies systematically by skill level, and that the pattern is visible across time controls.
-
-In both blitz and rapid, the dominant Other category grows with rating, from 0.732/0.768 at an 800 rating, 0.835/0.840 at 1600, and 0.892/0.877 at 2400 for blitz/rapid, respectively. This implies that higher-rated players place more of their opening mass outside the named top openings retained in the model. A rating pattern also presents itself where specific openings are concerned: For both blitz and rapid, the Philidor Defense is popular at 800, the Queen's Pawn Game is popular at 1600, and the Caro-Kann defense is popular at 2400. The identity and order of the top named openings is not identical, however, suggesting that time control shapes popularity within rating strata, even when the broader rating gradient is similar.
-
-```{r Opening-Popularity Results Figure}
-#| label: fig-opening-popularity-results
-#| fig-cap: "Predicted share for choice openings."
-#| fig-align: center
-
-p_opening_rating <- readRDS("Paper_files/figure-rds/p_opening_rating.rds")
-p_opening_rating
-```
-
-Changes in opening popularity over time are present, but modest in magnitude. As seen in table \ref{tab:opening-popularity-time-change} and elaborated on in @sec-metagame-dynamics-3, the time trend is directionally consistent across formats, the slight positive trend for Other pointing to broad compositional shifts rather than a dramatic takeover by one opening. In both formats, the largest named positive mover is the Accelerated London System, and the largest named negative mover is the French Defense: Knight Variation.
-
-The popularity results are based on the retained pooled multinomial model, which showed reasonable held-out performance on the test set with a log loss of 0.893 (see table \ref{tab:opening-popularity-model-comparison}). The one-opening models provide supporting checks, but the multinomial is the relevant basis for interpreting substitution across openings. Table \ref{tab:opening-popularity-robustness} tested linear and spline fits for both rating and time, as well as different top-$k$ thresholds. Allowing nonlinear rating slightly improved fit (log loss of 0.890 compared to 0.893), whereas allowing nonlinear time slightly worsened fit (0.895 compared to 0.893), though the improvements were incredibly marginal; the simpler linear-time specification is adequate for baseline reporting. As addressed in @sec-metagame-dynamics, an increase in $k$ saw a corresponding increase in log loss (0.666 for $k = 8$ up to 1.111 for $k = 16$), but this increase in modeling difficulty does not overturn the broad pattern of modest, consistent changes. As such, these conclusions don't appear to depend heavily on one narrow functional-form choice.
-
-Ultimately, these models found that opening popularity varies systematically by rating and time control. Higher-rated bins allocate more share outside the explicitly-retained top openings. Over time, the largest changes are modest but directionally consistent across blitz and rapid. The most visible temporal change is a rise in the residual other category alongside smaller named increases and decreases.
-
-### Time Use {#sec-time-use-3}
-<!-- I do not yet have coefficients/model estimates, so currently have some placeholders -->
-
-This category of models characterizes how players allocate time and experience time pressure across rating and time control; time use is being treated as a behavioral outcome that may vary by skill and the structure of the format. Two different models were retained for this category: interaction-based mean models for average time use, and a fractional quasibinomial model for low-time frequency. Average time use was modeled separately at the macro and player-month levels, but the results found in this section are taken from the player-level interaction model. Across the retained models, the clearest time-use pattern is a format-specific rating gradient: Stronger players use less time on average in blitz, but more in rapid and especially classical, implying that the relationship between skill and time allocation changes direction across formats. Low-time frequency was found to increase with rating in all formats, especially blitz.
-
-```{=latex}
-\begin{figure}[htbp]
-\centering
-\small
-\begin{equation*}
-\begin{aligned}
-\mathrm{AvgTime}_i
-&=
-\beta_0
-+
-\beta_1\,\mathrm{Rating}_i
-+
-\beta_2\,\mathbf{1}\{\mathrm{tc}_i=\mathrm{Classical}\}
-+
-\beta_3\,\mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\} \\
-&\quad
-+
-\beta_4\,\mathrm{Rating}_i \cdot \mathbf{1}\{\mathrm{tc}_i=\mathrm{Classical}\}
-+
-\beta_5\,\mathrm{Rating}_i \cdot \mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\}
-+
-\varepsilon_i.
-\end{aligned}
-\end{equation*}
-\caption{Retained player-level mean time-use model. Here, $\mathrm{AvgTime}_i$ denotes average time spent for observation $i$, and the interaction terms allow the rating slope to vary by time control.}
-\label{fig:eq-timeuse-mean}
-\end{figure}
-```
-
-```{=latex}
-\begin{figure}[htbp]
-\centering
-\small
-\begin{equation*}
-\begin{aligned}
-\operatorname{logit}\!\left(\mathbb{E}[L_i \mid X_i]\right)
-&=
-\beta_0
-+
-\beta_1\,\mathrm{Rating}_i
-+
-\beta_2\,\mathbf{1}\{\mathrm{tc}_i=\mathrm{Classical}\}
-+
-\beta_3\,\mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\},
-\end{aligned}
-\end{equation*}
-\caption{Retained fractional low-time model. Here, $L_i \in [0,1]$ denotes low-time frequency for observation $i$.}
-\label{fig:eq-timeuse-lowtime}
-\end{figure}
-```
-
-
-Per table \ref{tab:timeuse-mean-model-comparison} interaction specifications were retained at both levels due to slightly superior WRMSE (0.143 vs. 0.149 for macro and 1.832 vs. 1.839 for player-month). Though it's a marginal improvement, it implies that a common rating effect across time controls was slightly inadequate. Therefore, the substantive results should be interpreted in terms of format-specific rating relationships rather than one universal rating slope. As shown in the format difference are much substantial when taking model estimates into account, with blitz at the lowest (4.390 seconds per move at 800, 3.834 at 1600, and 3.279 at 2400), classical at the highest (800: 10.573, 1600: 12.396, 2400: 14.220), and rapid somewhere in between (800: 6.448, 1600: 7.136, 2400: 7.824). Notably, blitz is the only of the three with a negative rating gradient, and classical presents a much wider confidence interval, suggesting greater uncertainty (see table \ref{tab:timeuse-player-mean-profile}).
-
-
-
-
-Low-time frequency increases with rating in all three formats. As shown in table \ref{tab:timeuse-lowtime-profile} the absolute level of low-time pressure is highest in blitz, lower in rapid, and lowest in classical. For contrast, the lowest predicted low-time rate in blitz (0.0209 or 2.09% in the 800-rating bin) is greater than the highest predicted low-time rate in classical (0.0194 or 1.94% in the 2400-rating bin). Just as with the mean models, classical estimates are more uncertain than those for blitz and rapid. This means that, even though higher-rated players are more likely to enter low-time states in every format, the baseline prevalence of those states differs sharply across formats.
-
-
-
-
-
-In blitz, higher-rated players use less time on average but experience more low-time pressure. In rapid and classical, higher-rated players use more time on average but still experience more low-time pressure. From this, we can infer that low-time frequency is not merely an inverse of average pacing; it captures a distinct aspect of time-management behavior.
-
-```{r Time-Use Results Figure}
-#| label: fig-time-use-results
-#| fig-cap: "Predicted time-use values across rating bins."
-#| fig-align: center
-
-p_time_panels <- readRDS("Paper_files/figure-rds/p_time_panels.rds")
-p_time_panels
-```
-
-Though no relevant tables are present for the sake of brevity, it should be noted that interaction specifications were retained for the mean models because a common rating slope was inadequate. The negative baseline rating effect for blitz and positive rapid interaction were directionally consistent across supporting models. The classical interaction, however, was less stable and should therefore be interpreted more cautiously.
-
-On the whole, time-use behavior varies strongly across both rating and format. The relationship between rating and average time-use is format-specific, whereas low-time frequency rises with rating in all formats. Faster formats produce substantially more time pressure overall, which is expected. Therefore, average pace and acute time pressure should be treated as related-yet-distinct aspects of player behavior.
-
-### Player Progression {#sec-player-progression-3}
-
-The retained player fixed-effects models are being used to assess whether within-player changes in current-month behavior are associated with later rating movement, and if so, which behaviors are associated with what kinds of change (i.e., rating gain/loss). Three targets were retained: 1-month rating change, 3-month change, and absolute 1-month change. The signed (non-absolute) targets ask whether a predictor relates to a player moving up or down in rating, with positive values reflecting positive increases and vice versa. In contrast, the absolute target removes direction, and asks whether a predictor relates to moving more or less, regardless of direction—  positive values reflect larger changes, while negative ones imply smaller ones. 
-
-```{=latex}
-\begin{figure}[htbp]
-\centering
-\small
-\begin{equation*}
-\begin{aligned}
-Y_{it}^{(h)}
-&=
-\alpha_i
-+
-\beta_1\,\mathrm{AvgRating}_{it}
-+
-\beta_2\,\mathrm{Games}_{it}
-+
-\beta_3\,\mathrm{AvgMoves}_{it} \\
-&\quad
-+
-\beta_4\,\mathrm{OpeningDiversity}_{it}
-+
-\beta_5\,\mathrm{TopOpeningShare}_{it}
-+
-\beta_6\,\mathrm{SwitchedOpening}_{it}
-+
-\varepsilon_{it},
-\end{aligned}
-\end{equation*}
-\caption{Generic form of the retained player fixed-effects progression model, where $Y_{it}^{(h)} \in \{\Delta \mathrm{Rating}_{i,t+1}, \Delta \mathrm{Rating}_{i,t+3}, |\Delta \mathrm{Rating}_{i,t+1}|\}$.}
-\label{fig:eq-progression-fe-generic}
-\end{figure}
-```
-
-
-```{=latex}
-\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.4cm} >{\raggedright\arraybackslash}p{2.3cm} >{\raggedleft\arraybackslash}p{1.6cm} >{\raggedleft\arraybackslash}p{2.2cm} >{\raggedleft\arraybackslash}X}
-\caption{Coefficient estimates from the retained player fixed-effects progression models.}\label{tab:progression-fe-results}\\
-\toprule
-\textbf{Predictor} & \textbf{Target} & \textbf{Estimate} & \textbf{95\% CI} & \textbf{\textit{p}-Value} \\
-\midrule
-\endfirsthead
-
-\toprule
-\textbf{Predictor} & \textbf{Target} & \textbf{Estimate} & \textbf{95\% CI} & \textbf{\textit{p}-Value} \\
-\midrule
-\endhead
-
-\midrule
-\multicolumn{5}{r}{\small\emph{Continued...}} \\
-\endfoot
-
-\bottomrule
-\endlastfoot
-
-Current Average Rating & 1-Month Change & -0.469 & [-0.511, -0.427] & $< 0.001$ \\
-Games Played & 1-Month Change & -0.00295 & [-0.0101, 0.00420] & 0.398 \\
-Average Moves & 1-Month Change & 1.403 & [1.213, 1.594] & $< 0.001$ \\
-Opening Diversity & 1-Month Change & 0.162 & [0.129, 0.194] & $< 0.001$ \\
-Top-Opening Share & 1-Month Change & 6.697 & [-3.782, 17.176] & 0.196 \\
-Switched Most-Played Opening & 1-Month Change & 2.722 & [1.035, 4.409] & 0.003 \\
-
-Current Average Rating & 3-Month Change & -0.800 & [-0.859, -0.740] & $< 0.001$ \\
-Games Played & 3-Month Change & 0.00345 & [-0.00693, 0.0138] & 0.494 \\
-Average Moves & 3-Month Change & 1.112 & [0.870, 1.353] & $< 0.001$ \\
-Opening Diversity & 3-Month Change & 0.0614 & [0.0165, 0.106] & 0.010 \\
-Top-Opening Share & 3-Month Change & -3.668 & [-17.236, 9.901] & 0.577 \\
-Switched Most-Played Opening & 3-Month Change & 2.419 & [0.249, 4.589] & 0.031 \\
-
-Current Average Rating & Absolute 1-Month Change & 0.00027 & [-0.0107, 0.0112] & 0.959 \\
-Games Played & Absolute 1-Month Change & 0.00110 & [-0.00469, 0.00689] & 0.694 \\
-Average Moves & Absolute 1-Month Change & -0.334 & [-0.503, -0.165] & $< 0.001$ \\
-Opening Diversity & Absolute 1-Month Change & -0.0712 & [-0.0918, -0.0505] & $< 0.001$ \\
-Top-Opening Share & Absolute 1-Month Change & -5.837 & [-13.635, 1.961] & 0.133 \\
-Switched Most-Played Opening & Absolute 1-Month Change & -3.755 & [-4.344, -3.166] & $< 0.001$ \\
-\end{xltabular}
-```
-
-
-Table \ref{tab:progression-fe-results} shows that, for signed targets, higher current rating is associated with more negative subsequent rating change. Conversely, average moves, opening diversity, and switching one's most-played opening are positively associated with rating signed rating change. For the absolute-change target, average moves, opening diversity, and opening switching are all negatively associated with month-to-month volatility.
-
-```{r Player-Progression Results Figure}
-#| label: fig-player-progression-results
-#| fig-cap: "Predicted coefficients for the fixed-effects models"
-#| fig-align: center
-
-p_player_coef <- readRDS("Paper_files/figure-rds/p_player_coef.rds")
-p_player_coef
-```
-
-In concert, the signed and absolute targets paint a very consistent, very interesting picture. Among the predictors that matter, none are linked to greater movement magnitude; the signal is consistently toward smaller movement magnitude, with the weaker ones uncertain, but never clearly positive. This is particularly relevant when it comes to favorable (positive) signed predictors, as it means that every favorable predictor is associated with less absolute movement.
-
-Table \ref{tab:progression-fe-contrasts} helps convert the fixed-effect estimates into practical differences across representative predictor values. It compares continuous predictors are compared at the 25th and 75th percentiles, while the switching indicator is compared from 0 to 1. All magnitude patterns are directionally consistent with the coefficient table. Moving from lower to higher values of average moves corresponds to a meaningful increase in signed rating change. To a degree, this is also true of opening diversity, with the only difference being its modest range at the 3-month target compared to its 1-month counterpart (decreases from [6.052, 8.816] to [0.915, 4.852]). Switching the most-played opening is a smaller but still impactful contrast. All three are associated with smaller absolute movement. 
-
-Of particular note is current average rating, as its signed intervals are orders of magnitude larger than any of the other predictors. This does not imply that its importance as a predictor is equally large, however; rather, it's on a very wide scale, which impacts the size of the interval. As an example, for 1-month change, the 25th percentile rating is ~1272, while the 75th is ~1798, for a difference of ~526 rating points. Multiply that by the coefficient of -0.469 and you get a contrast near $-0.469 \times 526 \approx -247$. Compare this to average moves, where the 25th–75th gap is only about 7 moves, opening diversity where it's ~46 units, or top-opening share, where it's less than 0.1, and you'll see why the contrast band for average rating is so much larger.
-
-Not all retained predictors show equally clear evidence; games played and top-opening share stand out for being weak or ambiguous predictors. Refer back to table \ref{tab:progression-fe-results}. Neither have a p-value below 0.1 for any of the targets, and most are many times that. Their poor evaluation is further reinforced by table \ref{tab:progression-fe-contrasts}, as still neither have a confidence interval that precludes zero. Current average rating is of note for being the only predictor whose statistical significance crosses a meaningful alpha of 0.05 between models, with a p-value of 0.959 for the absolute target. This is expected, however, and actually a good sign that the models are on the right track. The Lichess rating system is designed so that a player's current rating is already a good summary of expected strength, so we actually shouldn't expect that it should predict larger or smaller absolute next-month movement; it would be more worrying if the coefficient weren't centered near 0.
-
-It's important to remember that the fixed-effect design isolates within-player association; these targets are being modeled as within-player associations, not as cross-sectional differences between players. The models are estimated on large within-player panels in order to support stable coefficient estimation. Note that the signed-change models explain substantially more within-player variation than the absolute-change model – within-$R^2$ values of 0.270, 0.453, and 0.004 for 1-month, 3-month, and 1-month absolute, respectively – so the latter is best treated as a supporting magnitude benchmark rather than the main target.
-
-Within players, months characterized by higher move-count games, broader opening diversity, and switching one's most-played opening are associated with more favorable next-month rating movement. Those same predictors are not associated with larger movement magnitude in the absolute model, but are instead most often associated with smaller absolute change. By contrast, games played and top-opening share do not show comparably stable evidence in the retained fixed-effects specification. These results suggest that the behavioral signals most associated with later progression concern game complexity, repertoire breadth, and active repertoire adjustment rather than simple activity volume or repertoire concentration alone.
-
-### Player Categorization {#sec-player-categorization-3}
-
-Though it has been mentioned multiple times in @sec-player-categorization-2, it is important to stress that no player-categorization model is fit for inference; even the retained $k$-means solution should only be treated as a descriptive summary of behavioral variation across player-month observations. The point here is not to treat the clusters as latent causal types, but to describe recurring patterns in performance, repertoire structure, and activity. The results below use standardized cluster centers, time-control distributions, and month-to-month persistence summaries.
-
-```{=latex}
-\begin{figure}[htbp]
-\centering
-\small
-\begin{equation*}
-\begin{aligned}
-\min_{C_1,\dots,C_6}
-\sum_{k=1}^{6}
-\sum_{i \in C_k}
-\left\| x_i - \mu_k \right\|^2,
-\end{aligned}
-\end{equation*}
-\caption{Retained $k$-means clustering objective for player categorization. Here, $x_i \in \mathbb{R}^p$ denotes the standardized feature vector for observation $i$, $C_k$ denotes cluster $k$, and $\mu_k$ denotes the centroid of cluster $k$.}
-\label{fig:eq-categorization-kmeans}
-\end{figure}
-```
-
-
 As described in tables \ref{tab:categorization-standardized-performance} and \ref{tab:categorization-standardized-repertoire}, clusters differ along multiple axes rather than only average rating. Clusters 1 and 2 are foils: the former contains wide-repertoire, high-activity, and above-average-rated players, whereas the latter has lower-rated, lower-activity, narrow-repertoire players whose games are shorter on average. Cluster 3 is notable for very high opening switching and somewhat lower opening concentration, but is otherwise close to the sample center. Clusters 4 and 5 both contain strong players, but are behaviorally distinct, with cluster 4 grouping players with longer games and high draw rates, and cluster 5 grouping players with high win rates and positive rating differentials. Finally, cluster 6 prefers players with concentrated openings, low switching, and moderate activity. In general, the clusters are especially concerned with diversity, concentration, switching, and game structure.
 
 Table \ref{tab:categorization-timecontrol-shares} shows that the behavioral clusters aren't distributed uniformly across formats. Blitz is most heavily represented by the switching-heavy and concentrated/stable clusters (3, 6). Classical is dominated by the high-win-rate cluster, the lower-rated/narrower cluster, and the long-game/high-draw cluster (5, 2, 4), with cluster 1 almost absent. Rapid is more evenly distributed, though clusters 2, 3, and 5 are the largest. The format patterns are suggestive rather than definitive, especially in classical, as its counts are much smaller. Overall, the results suggest that format is part of the behavioral structure summarized by the retained clustering solution.
@@ -1167,8 +1399,6 @@ The clusters have some continuity over time, but not enough to justify treating 
 
 Though unsuitable for inference, the retained $k$-means categorization solution is useful because it captures multiple distinct dimensions of behavior, those profiles are unevenly distributed across format, and that they show only moderate persistence over time. They do not, however, establish sharply-separated latent types or imply stable archetypes. At the end of the day, the clustering solution serves as a descriptive map of player-month behavior, but its moderate persistence and uneven transition structure suggest that these clusters are better understood as recurring behavioral profiles than anything more concrete.
 
-<!--
-\newpage
 -->
 
 ## Discussion
@@ -1264,7 +1494,7 @@ Finally, it must be acknowledged that the data used for modeling are both relati
 \newpage
 -->
 
-### Furture Work {#sec-future-work}
+### Future Work {#sec-future-work}
 
 The clearest and most immediate next step is to apply the retained modeling framework to richer and more-targeted datasets that allow greater depth within each substantive domain. This project was intentionally broad and reproducible, which made it possible to study several facets of online chess behaviors at once, but limited how deeply any one domain could be modeled. Future work could accordingly trade breadth for depth by using larger and more specialized datasets to model particular questions with greater specificity. Potential avenues include move-level game data, richer opening annotations, and more detailed and longer-spanning player histories.
 
