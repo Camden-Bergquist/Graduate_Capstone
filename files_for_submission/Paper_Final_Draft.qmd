@@ -11,6 +11,7 @@ format:
     lof: true
     lot: true
     keep-tex: true
+    fig-cap-location: top
     include-in-header:
       text: |
         \usepackage{url}
@@ -224,7 +225,7 @@ This finding isn't the end of the world, but it *is* extremely important to cont
 
 ```{r Coverage Plot}
 #| label: fig-coverage
-#| fig-cap: "Proportion of observations per time control is skewed due to the sampling method used when parsing. Any estimate that compares time controls will have unequal precision, especially where classical is concerned. "
+#| fig-cap: "Coverage of player-month-time-control observations over time by time control."
 #| fig-align: center
 
 cov_pm_tc <- dbGetQuery(con, sprintf("
@@ -237,7 +238,7 @@ cov_pm_tc <- dbGetQuery(con, sprintf("
 ggplot(cov_pm_tc, aes(x = month, y = n_rows, group = tc_bucket, color = tc_bucket)) +
   geom_line(linewidth = 1) +
   coord_cartesian(clip = "off") +
-  labs(x = "Month", y = "Observations", title = "Coverage of PM_TC Table", color = "Time Control") +
+  labs(x = "Month", y = "Observations", color = "Time Control") +
   scale_color_few(labels = c("Blitz", "Classical", "Rapid")) +
   theme_few() + 
   theme(
@@ -256,7 +257,7 @@ A second limitation is that the player panel is unbalanced. @fig-panel-depth sho
 
 ```{r Panel Depth Plot}
 #| label: fig-panel-depth
-#| fig-cap: "The panel is unbalanced: Many players appear briefly; fewer are observed consistently. Lag-based outcomes are only defined for a subset of observations."
+#| fig-cap: "Distribution of months observed per player in the sampled panel."
 #| fig-align: center
 
 panel_len <- dbGetQuery(con, sprintf("
@@ -311,9 +312,11 @@ Opening trends over time are one of the main ways this project aims to study met
 
 ```{r Opening by Rating}
 #| label: fig-opening-rating
-#| fig-cap: "Opening trends by rating are more interesting. The Pirc and Philidor defenses show particularly interesting movement as player rating increases."
+#| fig-cap: "Opening share by rating for selected blitz openings."
 #| fig-align: center
 #| fig-height: 4
+
+# Potentially change "selected" to "most common" in caption?
 
 # settings
 tc_use <- "blitz"
@@ -425,7 +428,7 @@ The time-usage plots show clearer structure. @fig-time shows a clear difference 
 
 ```{r Time Use}
 #| label: fig-time
-#| fig-cap: "All three time controls have distinct time-usage patterns as player rating increases."
+#| fig-cap: "Average time spent per move by player rating and time control."
 #| fig-align: center
 
 time_bin <- dbGetQuery(con, sprintf("
@@ -502,7 +505,7 @@ Several interpretable features were constructed from the player-opening and time
 
 Repertoire breadth was measured using opening diversity, defined as the number of distinct openings used within the relevant period. Repertoire concentration was summarized using the share of games allocated to the player’s most-used opening. Repertoire adjustment was captured in two related ways—  an indicator for whether the most-played opening changed from the previous month, and measures of month-to-month repertoire churn based on changes in opening-share vectors and the appearance of newly used openings. Time-use behavior was summarized using variables such as average time spent per move, upper-tail move-time summaries, opening-phase time allocation, and low-time frequency.^[Low-time definition: A move is flagged as 'low time' if the remaining clock time after the move satisfies $\text{clock\_after} \le \max\!\left(10,\; 2 \times \text{increment}\right)$ seconds, where $\text{increment}$ is the per-move increment of the game's time control.]
 
-Some time-use variables were structurally missing rather than randomly absent. In particular, endgame time measures are often unavailable because many games do not reach a computer-defined endgame phase.^[<Placeholder: Potential note here elaborating on the reason why?>] These missing values therefore reflect game structure rather than arbitrary loss of data. Models using phase-specific variables either handled these cases explicitly or restricted analysis to observations for which the relevant phase was meaningfully defined.
+Some time-use variables were structurally missing rather than randomly absent. In particular, endgame time measures are often unavailable because many games do not reach a computer-defined endgame phase. These missing values therefore reflect game structure rather than arbitrary loss of data. Models using phase-specific variables either handled these cases explicitly or restricted analysis to observations for which the relevant phase was meaningfully defined.
 
 
 <!--
@@ -690,10 +693,13 @@ For the macro outcomes, weighted linear models were retained as the primary infe
 ```{=latex}
 \begin{figure}[htbp]
 \centering
+\caption{Retained macro metagame model.}
+\label{fig:eq-metagame-macro}
+
 \small
 \begin{equation*}
 \begin{aligned}
-Y_{tc,t}
+Y_{tc, \ t}
 &=
 \beta_0
 +
@@ -708,11 +714,16 @@ Y_{tc,t}
 +
 \beta_5 \, t \cdot \mathbf{1}\{\mathrm{tc}=\mathrm{Rapid}\}
 +
-\varepsilon_{tc,t}.
+\varepsilon_{tc, \ t}
 \end{aligned}
 \end{equation*}
-\caption{Retained macro metagame model. Here, $Y_{tc,t}$ denotes a month-by-time-control metagame outcome, such as HHI concentration, effective number of openings, draw rate, upset rate, or average moves. Inference used Newey--West heteroskedasticity- and autocorrelation-consistent standard errors.}
-\label{fig:eq-metagame-macro}
+
+\par\medskip
+\begin{minipage}{0.92\linewidth}
+\small
+Here, $Y_{tc,t}$ denotes a month-by-time-control metagame outcome, such as HHI concentration, effective number of openings, draw rate, upset rate, or average moves. Inference used Newey--West heteroskedasticity- and autocorrelation-consistent standard errors.
+\end{minipage}
+
 \end{figure}
 ```
 
@@ -721,21 +732,29 @@ Opening composition required a different retained model because opening shares a
 ```{=latex}
 \begin{figure}[htbp]
 \centering
+\caption{Retained multinomial metagame-composition model, fit separately by time control.}
+\label{fig:eq-metagame-multinomial}
+
 \small
 \begin{equation*}
 \begin{aligned}
 \Pr(Y_t = k)
 &=
-\frac{\exp(\eta_{k,t})}
-{\sum_{j=1}^{K}\exp(\eta_{j,t})}, \\
+\frac{\exp(\eta_{k, \ t})}
+{\sum_{j=1}^{K}\exp(\eta_{j, \ t})}, \\
 \eta_{k,t}
 &=
 \alpha_k + \beta_k t,
-\qquad k=1,\dots,K.
+\quad k=1,\dots,K
 \end{aligned}
 \end{equation*}
-\caption{Retained multinomial metagame-composition model, fit separately by time control. Here, $Y_t$ denotes the opening category at month $t$, and $k$ indexes the retained opening categories.}
-\label{fig:eq-metagame-multinomial}
+
+\par\medskip
+\begin{minipage}{0.92\linewidth}
+\small
+Here, $Y_t$ denotes the opening category at month $t$, and $k$ indexes the retained opening categories.
+\end{minipage}
+
 \end{figure}
 ```
 
@@ -778,6 +797,9 @@ The pooled multinomial model was retained as the primary specification for this 
 ```{=latex}
 \begin{figure}[htbp]
 \centering
+\caption{Retained pooled multinomial opening-popularity model.}
+\label{fig:eq-opening-popularity}
+
 \small
 \begin{equation*}
 \begin{aligned}
@@ -798,11 +820,16 @@ The pooled multinomial model was retained as the primary specification for this 
 +
 \beta_{4k}\,\mathrm{RatingBin}_i
 \cdot
-\mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\}.
+\mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\}
 \end{aligned}
 \end{equation*}
-\caption{Retained pooled multinomial opening-popularity model. Here, $Y_i$ denotes the opening category for month-by-time-control-by-rating-bin cell $i$, $t_i$ is the month index, and $k$ indexes the retained opening categories, including "Other".}
-\label{fig:eq-opening-popularity}
+
+\par\medskip
+\begin{minipage}{0.92\linewidth}
+\small
+Here, $Y_i$ denotes the opening category for month-by-time-control-by-rating-bin cell $i$, $t_i$ is the month index, and $k$ indexes the retained opening categories, including ``Other''.
+\end{minipage}
+
 \end{figure}
 ```
 
@@ -839,6 +866,9 @@ For average time use, candidate specifications were compared at both the macro m
 ```{=latex}
 \begin{figure}[htbp]
 \centering
+\caption{Retained player-level mean time-use model.}
+\label{fig:eq-timeuse-mean}
+
 \small
 \begin{equation*}
 \begin{aligned}
@@ -857,11 +887,16 @@ For average time use, candidate specifications were compared at both the macro m
 +
 \beta_5\,\mathrm{Rating}_i \cdot \mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\}
 +
-\varepsilon_i.
+\varepsilon_i
 \end{aligned}
 \end{equation*}
-\caption{Retained player-level mean time-use model. Here, $\mathrm{AvgTime}_i$ denotes average time spent for observation $i$, and the interaction terms allow the rating slope to vary by time control.}
-\label{fig:eq-timeuse-mean}
+
+\par\medskip
+\begin{minipage}{0.92\linewidth}
+\small
+Here, $\mathrm{AvgTime}_i$ denotes average time spent for observation $i$, and the interaction terms allow the rating slope to vary by time control.
+\end{minipage}
+
 \end{figure}
 ```
 
@@ -870,6 +905,9 @@ For low-time frequency, the main comparison was between a fractional quasibinomi
 ```{=latex}
 \begin{figure}[htbp]
 \centering
+\caption{Retained fractional low-time model.}
+\label{fig:eq-timeuse-lowtime}
+
 \small
 \begin{equation*}
 \begin{aligned}
@@ -881,11 +919,16 @@ For low-time frequency, the main comparison was between a fractional quasibinomi
 +
 \beta_2\,\mathbf{1}\{\mathrm{tc}_i=\mathrm{Classical}\}
 +
-\beta_3\,\mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\},
+\beta_3\,\mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\}
 \end{aligned}
 \end{equation*}
-\caption{Retained fractional low-time model. Here, $L_i \in [0,1]$ denotes low-time frequency for observation $i$.}
-\label{fig:eq-timeuse-lowtime}
+
+\par\medskip
+\begin{minipage}{0.92\linewidth}
+\small
+Here, $L_i \in [0, \ 1]$ denotes low-time frequency for observation $i$.
+\end{minipage}
+
 \end{figure}
 ```
 
@@ -920,6 +963,9 @@ Across the retained targets, the player fixed-effects specifications provided th
 ```{=latex}
 \begin{figure}[htbp]
 \centering
+\caption{Generic form of the retained player fixed-effects progression model.}
+\label{fig:eq-progression-fe-generic}
+
 \small
 \begin{equation*}
 \begin{aligned}
@@ -940,11 +986,16 @@ Y_{it}^{(h)}
 +
 \beta_6\,\mathrm{SwitchedOpening}_{it}
 +
-\varepsilon_{it},
+\varepsilon_{it}
 \end{aligned}
 \end{equation*}
-\caption{Generic form of the retained player fixed-effects progression model, where $Y_{it}^{(h)} \in \{\Delta \mathrm{Rating}_{i,t+1}, \Delta \mathrm{Rating}_{i,t+3}, |\Delta \mathrm{Rating}_{i,t+1}|\}$.}
-\label{fig:eq-progression-fe-generic}
+
+\par\medskip
+\begin{minipage}{0.92\linewidth}
+\small
+Here, $Y_{it}^{(h)} \in \{\Delta \mathrm{Rating}_{i, \ t+1}, \Delta \mathrm{Rating}_{i, \ t+3}, |\Delta \mathrm{Rating}_{i, \ t+1}|\}$.
+\end{minipage}
+
 \end{figure}
 ```
 
@@ -979,17 +1030,25 @@ Candidate descriptive approaches included $k$-means clustering, hierarchical clu
 ```{=latex}
 \begin{figure}[htbp]
 \centering
+\caption{Retained $k$-means clustering objective for player categorization.}
+\label{fig:eq-categorization-kmeans}
+
 \small
 \begin{equation*}
 \begin{aligned}
 \min_{C_1,\dots,C_6}
 \sum_{k=1}^{6}
 \sum_{i \in C_k}
-\left\| x_i - \mu_k \right\|^2,
+\left\| x_i - \mu_k \right\|^2
 \end{aligned}
 \end{equation*}
-\caption{Retained $k$-means clustering objective for player categorization. Here, $x_i \in \mathbb{R}^p$ denotes the standardized feature vector for observation $i$, $C_k$ denotes cluster $k$, and $\mu_k$ denotes the centroid of cluster $k$.}
-\label{fig:eq-categorization-kmeans}
+
+\par\medskip
+\begin{minipage}{0.92\linewidth}
+\small
+Here, $x_i \in \mathbb{R}^p$ denotes the standardized feature vector for observation $i$, $C_k$ denotes cluster $k$, and $\mu_k$ denotes the centroid of cluster $k$.
+\end{minipage}
+
 \end{figure}
 ```
 
@@ -1036,7 +1095,7 @@ The intent of metagame-dynamics models was to characterize the state and evoluti
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{2.6cm} >{\raggedright\arraybackslash}p{3.5cm} >{\raggedleft\arraybackslash}p{2.1cm} >{\raggedleft\arraybackslash}p{1.8cm} >{\raggedleft\arraybackslash}X}
-\caption{Estimated time effects from the retained macro metagame models.}\label{tab:metagame-macro-estimates}\\
+\caption{Estimated time-trend effects from the retained macro metagame models.}\label{tab:metagame-macro-estimates}\\
 \toprule
 \textbf{Outcome} & \textbf{Effect} & \textbf{Estimate} & \textbf{SE} & \textbf{\textit{p}-Value} \\
 \midrule
@@ -1084,7 +1143,7 @@ Across formats, opening usage became less concentrated and more diverse (see tab
 
 ```{r Metagame Results Figure}
 #| label: fig-metagame-results
-#| fig-cap: "Predicted model values over time."
+#| fig-cap: "Fitted HHI concentration and effective number of openings over time by time control."
 #| fig-align: center
 
 p_macro_fit <- readRDS("Paper_files/figure-rds/p_macro_fit.rds")
@@ -1127,7 +1186,7 @@ In both blitz and rapid, the dominant Other category grows with rating, from 0.7
 
 ```{r Opening-Popularity Results Figure}
 #| label: fig-opening-popularity-results
-#| fig-cap: "Predicted share for choice openings."
+#| fig-cap: "Predicted opening share by rating for selected openings in blitz and rapid."
 #| fig-align: center
 
 p_opening_rating <- readRDS("Paper_files/figure-rds/p_opening_rating.rds")
@@ -1138,7 +1197,7 @@ Table \ref{tab:opening-popularity-rating-profile} provides representative predic
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedleft\arraybackslash}p{1.8cm} >{\raggedright\arraybackslash}p{1.8cm} X X X}
-\caption{Representative rating-conditioned predictions from the pooled multinomial opening-popularity model.}\label{tab:opening-popularity-rating-profile}\\
+\caption{Representative predicted opening shares by rating and time control from the pooled multinomial model.}\label{tab:opening-popularity-rating-profile}\\
 \toprule
 \textbf{Rating Bin} & \textbf{Time Control} & \textbf{Most Likely Opening} & \textbf{Second Most Likely} & \textbf{Third Most Likely} \\
 \midrule
@@ -1207,7 +1266,7 @@ In blitz, higher-rated players use less time on average but experience more low-
 
 ```{r Time-Use Results Figure}
 #| label: fig-time-use-results
-#| fig-cap: "Predicted time-use values across rating bins."
+#| fig-cap: "Predicted average time spent per move and low-time frequency by rating and time control."
 #| fig-align: center
 
 p_time_panels <- readRDS("Paper_files/figure-rds/p_time_panels.rds")
@@ -1237,7 +1296,7 @@ Table \ref{tab:progression-fe-results} provides the central inferential summary.
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.4cm} >{\raggedright\arraybackslash}p{2.3cm} >{\raggedleft\arraybackslash}p{1.6cm} >{\raggedleft\arraybackslash}p{2.2cm} >{\raggedleft\arraybackslash}X}
-\caption{Coefficient estimates from the retained player fixed-effects progression models.}\label{tab:progression-fe-results}\\
+\caption{Estimated coefficients from the retained player fixed-effects progression models.}\label{tab:progression-fe-results}\\
 \toprule
 \textbf{Predictor} & \textbf{Target} & \textbf{Estimate} & \textbf{95\% CI} & \textbf{\textit{p}-Value} \\
 \midrule
@@ -1285,7 +1344,7 @@ Table \ref{tab:progression-fe-results} shows that, for signed targets, higher cu
 -->
 ```{r Player-Progression Results Figure}
 #| label: fig-player-progression-results
-#| fig-cap: "Predicted coefficients for the fixed-effects models"
+#| fig-cap: "Estimated coefficients from the retained player fixed-effects progression models by outcome target."
 #| fig-align: center
 
 p_player_coef <- readRDS("Paper_files/figure-rds/p_player_coef.rds")
@@ -1320,7 +1379,7 @@ Though it has been mentioned multiple times in @sec-player-categorization-2, it 
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedleft\arraybackslash}p{1.4cm} >{\raggedleft\arraybackslash}p{1.6cm} >{\raggedleft\arraybackslash}p{2.0cm} >{\raggedleft\arraybackslash}p{2.2cm} >{\raggedleft\arraybackslash}p{1.8cm} >{\raggedleft\arraybackslash}X}
-\caption{Performance and outcome means for the retained player-categorization solution.}\label{tab:categorization-performance-profiles}\\
+\caption{Performance and outcome means by cluster for the retained player-categorization solution.}\label{tab:categorization-performance-profiles}\\
 \toprule
 \textbf{Cluster} & \textbf{Share} & \textbf{Avg. Rating} & \textbf{Avg. Rating Diff.} & \textbf{Avg. Moves} & \textbf{Win Rate} \\
 \midrule
@@ -1349,7 +1408,7 @@ Though it has been mentioned multiple times in @sec-player-categorization-2, it 
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedleft\arraybackslash}p{1.6cm} >{\raggedleft\arraybackslash}p{1.8cm} >{\raggedleft\arraybackslash}p{2.4cm} >{\raggedleft\arraybackslash}p{2.4cm} >{\raggedleft\arraybackslash}X}
-\caption{Repertoire means for the retained player-categorization solution.}\label{tab:categorization-repertoire-profiles}\\
+\caption{Repertoire means by cluster for the retained player-categorization solution.}\label{tab:categorization-repertoire-profiles}\\
 \toprule
 \textbf{Cluster} & \textbf{Share} & \textbf{Opening Diversity} & \textbf{Top Opening Share} & \textbf{Switched Opening} \\
 \midrule
@@ -1382,9 +1441,11 @@ The cluster distributions also vary by time control. Some profiles are more comm
 
 ```{r Cluster Heatmap}
 #| label: fig-cluster-heatmap
-#| fig-cap: "Lorem ipsum."
+#| fig-cap: "Month-to-month transition matrix for the retained player-categorization clusters."
 #| fig-align: center
 #| fig-pos: H
+
+# Potential second sentence for caption: "Rows sum to 100%, and transitions are computed within player and time control for consecutive months."
 
 p_cluster_heatmap <- readRDS("Paper_files/figure-rds/p_transition_heat.rds")
 p_cluster_heatmap
@@ -1611,7 +1672,7 @@ Can't move this to a level-1 heading, and not sure whether to keep it or not.
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{2.6cm} X}
-\caption{Player-month outcome and covariate variables (table: \texttt{pm}).}\label{tab:variables-pm}\\
+\caption{Variable definitions for the player-month (\texttt{pm}) table.}\label{tab:variables-pm}\\
 \toprule
 \textbf{Variable} & \textbf{Type} & \textbf{Description} \\
 \midrule
@@ -1629,7 +1690,7 @@ Can't move this to a level-1 heading, and not sure whether to keep it or not.
 \bottomrule
 \endlastfoot
 
-\texttt{player} & categorical & Deterministic pseudonymous user ID (e.g., \texttt{u\us ...}). Identifies a player across months in longitudinal summaries. \\
+\texttt{player} & categorical & Deterministic pseudonymous user ID (e.g., \texttt{u\us 01234567abcdefgh}). Identifies a player across months in longitudinal summaries. \\
 \texttt{month} & categorical & Month of play as \texttt{YYYY-MM}. Primary time index for longitudinal analysis. \\
 \texttt{games} & numeric (count) & Number of games played by the player in the month. Also a reliability/weighting signal. \\
 \texttt{wins} & numeric (count) & Count of wins in the month. \\
@@ -1648,7 +1709,7 @@ Can't move this to a level-1 heading, and not sure whether to keep it or not.
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{2.6cm} X}
-\caption{Player-month-time-control outcome and covariate variables (table: \texttt{pm\us tc}).}\label{tab:variables-pm-tc}\\
+\caption{Variable definitions for the player-month-by-time-control (\texttt{pm\us tc}) table.}\label{tab:variables-pm-tc}\\
 \toprule
 \textbf{Variable} & \textbf{Type} & \textbf{Description} \\
 \midrule
@@ -1686,7 +1747,7 @@ Can't move this to a level-1 heading, and not sure whether to keep it or not.
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{2.6cm} X}
-\caption{Player-opening summary variables (table: \texttt{pom\us tc}).}\label{tab:variables-pom-tc}\\
+\caption{Variable definitions for the player-opening summary (\texttt{pom\us tc}) table.}\label{tab:variables-pom-tc}\\
 \toprule
 \textbf{Variable} & \textbf{Type} & \textbf{Description} \\
 \midrule
@@ -1719,7 +1780,7 @@ Can't move this to a level-1 heading, and not sure whether to keep it or not.
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{2.6cm} X}
-\caption{Player time-use summary variables (table: \texttt{ptm\us tc}).}\label{tab:variables-ptm-tc}\\
+\caption{Variable definitions for the player time-use summary (\texttt{ptm\us tc}) table.}\label{tab:variables-ptm-tc}\\
 \toprule
 \textbf{Variable} & \textbf{Type} & \textbf{Description} \\
 \midrule
@@ -1757,7 +1818,7 @@ Can't move this to a level-1 heading, and not sure whether to keep it or not.
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{2.6cm} X}
-\caption{Metagame opening summary variables (table: \texttt{mom\us tc}).}\label{tab:variables-mom-tc}\\
+\caption{Variable definitions for the metagame opening summary (\texttt{mom\us tc}) table.}\label{tab:variables-mom-tc}\\
 \toprule
 \textbf{Variable} & \textbf{Type} & \textbf{Description} \\
 \midrule
@@ -1792,7 +1853,7 @@ Can't move this to a level-1 heading, and not sure whether to keep it or not.
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{2.6cm} X}
-\caption{Metagame month-level summary variables (table: \texttt{mm\us tc}).}\label{tab:variables-mm-tc}\\
+\caption{Variable definitions for the metagame month-level summary (\texttt{mm\us tc}) table.}\label{tab:variables-mm-tc}\\
 \toprule
 \textbf{Variable} & \textbf{Type} & \textbf{Description} \\
 \midrule
@@ -1827,7 +1888,7 @@ Can't move this to a level-1 heading, and not sure whether to keep it or not.
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{2.6cm} X}
-\caption{Population time-use summary variables (table: \texttt{mvm\us tc}).}\label{tab:variables-mvm-tc}\\
+\caption{Variable definitions for the population time-use summary (\texttt{mvm\us tc}) table.}\label{tab:variables-mvm-tc}\\
 \toprule
 \textbf{Variable} & \textbf{Type} & \textbf{Description} \\
 \midrule
@@ -2121,7 +2182,7 @@ I have decided that this section is almost wholly redundant, but want to keep th
 
 ```{r Reliability Plot}
 #| label: fig-reliability
-#| fig-cap: "Player-month observations have highly unequal reliability. The dataset has a long, right-skewed tail of heavy-activity players, which risk dominating aggregates if not uncontrolled for."
+#| fig-cap: "Distribution of games per player-month in the sampled panel."
 #| fig-align: center
 #| fig-pos: H
 
@@ -2141,7 +2202,7 @@ ggplot(gdist, aes(x=games)) +
 
 ```{r Coverage-by-Rating Plot}
 #| label: fig-coverage-rating
-#| fig-cap: "Player-month observations have highly unequal reliability. The dataset has a long, right-skewed tail of heavy-activity players, which risk dominating aggregates if not uncontrolled for."
+#| fig-cap: "Support across rating bins by time control, shown as row counts and summed games in `pom_tc`."
 #| fig-align: center
 #| fig-pos: H
 
@@ -2203,7 +2264,7 @@ ggplot(support_by_rating2, aes(x = rating_bin, y = support)) +
 
 ```{r Rating Changes Plot}
 #| label: fig-delta-rating
-#| fig-cap: "Rating change is centered near zero with roughly symmetric dispersion. Most month-to-month changes are small, so effect sizes will likely be modest."
+#| fig-cap: "Distribution of within-player month-to-month rating change."
 #| fig-align: center
 #| fig-pos: H
 
@@ -2234,7 +2295,7 @@ ggplot(chg, aes(x=d_rating)) +
 
 ```{r Volatility Plot}
 #| label: fig-volatility
-#| fig-cap: "Observed rating movement behaves like a measurement-error problem; the number of games played is inversely proportional to rating-change volatility. This is expected behavior for a rating system."
+#| fig-cap: "Absolute month-to-month rating change by games played per month."
 #| fig-align: center
 #| fig-pos: H
 
@@ -2272,9 +2333,11 @@ ggplot(vol, aes(x = games, y = abs_d_rating)) +
 
 ```{r LTD}
 #| label: fig-low-time-distribution
-#| fig-cap: "Lorem ipsum."
+#| fig-cap: "Distribution of low-time rate and exact-zero mass by time control."
 #| fig-align: center
 #| fig-pos: H
+
+# Candidate second sentence for caption: "The top panel shows the distribution of low-time rate, and the bottom panel shows the frequency of exact-zero observations within each format."
 
 min_moves_ptm <- 40
 positive_binwidth <- 0.01
@@ -2347,9 +2410,11 @@ p2 / p1
 
 ```{r LTR}
 #| label: fig-low-time
-#| fig-cap: "Low-time rate is zero-inflated and noisy. Time-control-specific curves are underpowered (with the exception of blitz), and pooling is needed for stable inference. Any relationship between time trouble and improvement is likely both small and nonlinear, which is why loess smoothing wasn't applied to this figure."
+#| fig-cap: "Next-month rating change by low-time rate, pooled across time controls."
 #| fig-align: center
 #| fig-pos: H
+
+# Candidate second caption sentence: "The figure is shown on the pooled sample because time-control-specific curves were too sparse for stable visualization."
 
 min_games_pm   <- 5     # require at least this many games in the month (across all TCs)
 min_moves_ptm  <- 25    # require at least this many move rows in the month (across all TCs)
@@ -2518,7 +2583,7 @@ plot_opening_trends <- function(tc_use, fig_title) {
 
 ```{r Blitz Opening Trends}
 #| label: fig-opening-blitz
-#| fig-cap: "Opening preference remains remarkably stable in blitz games over the project's two-year period."
+#| fig-cap: "Opening share over time for the most common blitz openings."
 #| fig-align: center
 #| fig-pos: H
 #| fig-height: 5
@@ -2528,7 +2593,7 @@ plot_opening_trends("blitz", "Opening Share Over Time (Blitz)")
 
 ```{r Rapid Opening Trends}
 #| label: fig-opening-rapid
-#| fig-cap: "Opening preference remains fairly stable in rapid games over the project's two-year period."
+#| fig-cap: "Opening share over time for the most common rapid openings."
 #| fig-align: center
 #| fig-pos: H
 #| fig-height: 5
@@ -2538,7 +2603,7 @@ plot_opening_trends("rapid", "Opening Share Over Time (Rapid)")
 
 ```{r Classical Opening Trends}
 #| label: fig-opening-classical
-#| fig-cap: "Opening preference is somewhat less stable in classical games, though broad repertoire patterns still persist over the project's two-year period."
+#| fig-cap: "Opening share over time for the most common classical openings."
 #| fig-align: center
 #| fig-pos: H
 #| fig-height: 5
@@ -2548,7 +2613,7 @@ plot_opening_trends("classical", "Opening Share Over Time (Classical)")
 
 ```{r Allocation Profile by Rating}
 #| label: fig-time-allocation
-#| fig-cap: "All three time controls have distinct time-usage patterns when game phases are additionally factored in."
+#| fig-cap: "Average time spent per move by rating, time control, and game phase."
 #| fig-align: center
 #| fig-pos: H
 
@@ -2592,11 +2657,13 @@ ggplot(phase_long, aes(x=rating_bin, y=sec, color=phase, group=phase)) +
 
 ```{r Div Strata}
 #| label: fig-strata
-#| fig-cap: "Line color indicates number of games played, while the x-axis show the number of unique openings a player used within a given month."
+#| fig-cap: "Mean next-month rating change by opening diversity, stratified by rating and game volume."
 #| fig-align: center
 #| fig-pos: H
 #| fig-height: 6
 #| fig-width: 8
+
+# Candidate second sentence for caption: "Line color indicates games played within the month."
 
 div_strata <- dbGetQuery(con, sprintf("
   WITH x AS (
@@ -2693,7 +2760,7 @@ Average Moves & All Formats & 0.081 \\
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.7cm} >{\raggedright\arraybackslash}p{2.8cm} >{\raggedright\arraybackslash}p{2.3cm} >{\raggedleft\arraybackslash}X}
-\caption{Held-out predictive error for opening-composition models.}\label{tab:metagame-composition-model-comparison}\\
+\caption{Held-out predictive error for retained opening-composition models.}\label{tab:metagame-composition-model-comparison}\\
 \toprule
 \textbf{Target} & \textbf{Model} & \textbf{Time Control} & \textbf{Held-Out Error} \\
 \midrule
@@ -2725,7 +2792,7 @@ Opening Composition & Multinomial & Rapid & 0.923 \\
 
 ```{r Metagame Diagonal}
 #| label: fig-metagame-diagonal
-#| fig-cap: "Lorem ipsum."
+#| fig-cap: "Observed versus fitted values for the retained macro metagame models."
 #| fig-align: center
 #| fig-pos: H
 #| fig-height: 5
@@ -2736,7 +2803,7 @@ p_metagame_diag
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedleft\arraybackslash}p{1.4cm} >{\raggedleft\arraybackslash}p{2.0cm} >{\raggedleft\arraybackslash}p{2.0cm} X X}
-\caption{Robustness of the Blitz multinomial model to the number of retained opening categories.}\label{tab:metagame-multinomial-robustness}\\
+\caption{Robustness of the blitz multinomial model to the number of retained opening categories.}\label{tab:metagame-multinomial-robustness}\\
 \toprule
 \textbf{$k$} & \textbf{Categories} & \textbf{Log Loss} & \textbf{Top Increase} & \textbf{Top Decrease} \\
 \midrule
@@ -2764,7 +2831,7 @@ p_metagame_diag
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X >{\raggedleft\arraybackslash}p{1.8cm} >{\raggedleft\arraybackslash}p{2.2cm}}
-\caption{Held-out predictive error for opening-popularity models.}\label{tab:opening-popularity-model-comparison}\\
+\caption{Held-out predictive error for retained opening-popularity models.}\label{tab:opening-popularity-model-comparison}\\
 \toprule
 \textbf{Model} & \textbf{Target} & \textbf{Test Rows} & \textbf{Held-Out Error} \\
 \midrule
@@ -2792,7 +2859,7 @@ Weighted Least Squares (Per Opening) & Opening Share & 80--81 & 0.0024--0.0046 \
 
 ```{r Opening Diagonal}
 #| label: fig-opening-diagonal
-#| fig-cap: "Lorem ipsum."
+#| fig-cap: "Observed versus predicted opening shares for the retained pooled multinomial model in the test set."
 #| fig-align: center
 #| fig-pos: H
 
@@ -2802,7 +2869,7 @@ p_opening_diag
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{2.0cm} >{\raggedleft\arraybackslash}p{1.6cm} X X}
-\caption{Largest predicted opening-share changes over time from the pooled multinomial model.}\label{tab:opening-popularity-time-change}\\
+\caption{Largest predicted opening-share changes over time from the retained pooled multinomial model.}\label{tab:opening-popularity-time-change}\\
 \toprule
 \textbf{Time Control} & \textbf{Rating} & \textbf{Largest Positive Movers} & \textbf{Largest Negative Movers} \\
 \midrule
@@ -2827,7 +2894,7 @@ Rapid & 1600 & \texttt{Other} ($+0.0066$); \texttt{Queen's Pawn Game: Accelerate
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X >{\raggedleft\arraybackslash}p{2.0cm}}
-\caption{Robustness checks for the pooled multinomial opening-popularity model.}\label{tab:opening-popularity-robustness}\\
+\caption{Robustness checks for the retained pooled multinomial opening-popularity model.}\label{tab:opening-popularity-robustness}\\
 \toprule
 \textbf{Check} & \textbf{Specification} & \textbf{Log Loss} \\
 \midrule
@@ -2861,7 +2928,7 @@ Top-$k$ Threshold & $k = 16$ & 1.111 \\
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{3.0cm} >{\raggedleft\arraybackslash}X}
-\caption{Held-out predictive error for mean time-use models.}\label{tab:timeuse-mean-model-comparison}\\
+\caption{Held-out predictive error for retained mean time-use models.}\label{tab:timeuse-mean-model-comparison}\\
 \toprule
 \textbf{Level} & \textbf{Specification} & \textbf{WRMSE} \\
 \midrule
@@ -2888,7 +2955,7 @@ Player-Month & Interaction & 1.832 \\
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{4.2cm} >{\raggedleft\arraybackslash}X}
-\caption{Held-out predictive error for low-time-rate models.}\label{tab:timeuse-lowtime-model-comparison}\\
+\caption{Held-out predictive error for retained low-time-rate models.}\label{tab:timeuse-lowtime-model-comparison}\\
 \toprule
 \textbf{Specification} & \textbf{WRMSE} \\
 \midrule
@@ -2915,7 +2982,7 @@ Binomial Approximation & 0.07445 \\
 
 ```{r Time-Use Diagonal}
 #| label: fig-timeuse-diagonal
-#| fig-cap: "Lorem ipsum."
+#| fig-cap: "Observed versus predicted low-time rate for the retained fractional low-time model in the test set."
 #| fig-align: center
 #| fig-pos: H
 
@@ -2925,7 +2992,7 @@ p_timeuse_diag
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.2cm} >{\raggedright\arraybackslash}p{3.0cm} >{\raggedleft\arraybackslash}X}
-\caption{Robustness checks for the retained mean time-use models.}\label{tab:timeuse-mean-robustness}\\
+\caption{Robustness checks for retained mean time-use models.}\label{tab:timeuse-mean-robustness}\\
 \toprule
 \textbf{Level} & \textbf{Specification} & \textbf{WRMSE} \\
 \midrule
@@ -2952,7 +3019,7 @@ Player Mean Time Use & Spline Rating & 1.823 \\
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{4.4cm} >{\raggedleft\arraybackslash}X}
-\caption{Robustness check for the retained low-time-rate model.}\label{tab:timeuse-lowtime-robustness}\\
+\caption{Robustness checks for the retained low-time-rate model.}\label{tab:timeuse-lowtime-robustness}\\
 \toprule
 \textbf{Specification} & \textbf{WRMSE} \\
 \midrule
@@ -2979,7 +3046,7 @@ Fractional Model, Spline Rating & 0.07445 \\
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{2.6cm} >{\raggedleft\arraybackslash}p{1.8cm} >{\raggedleft\arraybackslash}p{2.3cm} >{\raggedleft\arraybackslash}X}
-\caption{Predicted average time spent from the retained player-level mean time-use model at the reference month.}\label{tab:timeuse-player-mean-profile}\\
+\caption{Predicted average time spent at the reference month from the retained player-level mean time-use model.}\label{tab:timeuse-player-mean-profile}\\
 \toprule
 \textbf{Time Control} & \textbf{Rating} & \textbf{Predicted Mean} & \textbf{95\% CI} \\
 \midrule
@@ -3011,7 +3078,7 @@ Rapid & 2400 & 7.595 & [7.286, 7.905] \\
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{2.6cm} >{\raggedleft\arraybackslash}p{1.8cm} >{\raggedleft\arraybackslash}p{2.4cm} >{\raggedleft\arraybackslash}X}
-\caption{Predicted low-time frequency from the retained fractional time-pressure model at the reference month.}\label{tab:timeuse-lowtime-profile}\\
+\caption{Predicted low-time frequency at the reference month from the retained fractional time-pressure model.}\label{tab:timeuse-lowtime-profile}\\
 \toprule
 \textbf{Time Control} & \textbf{Rating} & \textbf{Predicted Rate} & \textbf{95\% CI} \\
 \midrule
@@ -3074,7 +3141,7 @@ Absolute 1-Month Change & 99{,}049 & 18{,}166 & $|\Delta \text{Rating}_{t+1}|$ \
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.0cm} >{\raggedright\arraybackslash}p{2.6cm} >{\raggedleft\arraybackslash}p{1.8cm} >{\raggedleft\arraybackslash}p{1.8cm} >{\raggedleft\arraybackslash}X}
-\caption{Held-out predictive performance for player-progression models.}\label{tab:progression-predictive-comparison}\\
+\caption{Held-out predictive performance for retained player-progression models.}\label{tab:progression-predictive-comparison}\\
 \toprule
 \textbf{Model} & \textbf{Target} & \textbf{RMSE} & \textbf{MAE} & \textbf{Test Rows} \\
 \midrule
@@ -3110,7 +3177,7 @@ Random Forest & Absolute 1-Month Change & 45.70 & 30.66 & 18{,}166 \\
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{4.2cm} >{\raggedleft\arraybackslash}p{1.8cm} >{\raggedleft\arraybackslash}p{2.0cm} >{\raggedleft\arraybackslash}p{1.8cm} >{\raggedleft\arraybackslash}X}
-\caption{Robustness checks for the retained 1-month player fixed-effects model.}\label{tab:progression-fe-robustness}\\
+\caption{Robustness checks for the retained 1-month fixed-effects progression model.}\label{tab:progression-fe-robustness}\\
 \toprule
 \textbf{Specification} & \textbf{Train} & \textbf{Predicted / Total Test} & \textbf{RMSE} & \textbf{MAE} \\
 \midrule
@@ -3138,7 +3205,7 @@ Spline Rating & 99{,}049 & 14{,}878 / 18{,}166 & 57.72 & 41.25 \\
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{4.2cm} >{\raggedleft\arraybackslash}p{2.0cm} >{\raggedleft\arraybackslash}X}
-\caption{Fixed-effects structure sensitivity for the 1-month progression model.}\label{tab:progression-fe-structure}\\
+\caption{Fixed-effects structure sensitivity for the retained 1-month progression model.}\label{tab:progression-fe-structure}\\
 \toprule
 \textbf{Specification} & \textbf{Train} & \textbf{Within-$R^2$} \\
 \midrule
@@ -3165,7 +3232,7 @@ Player + Month Fixed Effects & 95{,}428 & 0.2744 \\
 
 ```{r Progressiono Diagonal}
 #| label: fig-progression-diagonal
-#| fig-cap: "Lorem ipsum."
+#| fig-cap: "Observed versus predicted mean 1-month rating change by decile of predicted change for the retained fixed-effects progression model."
 #| fig-align: center
 #| fig-pos: H
 
@@ -3175,7 +3242,7 @@ p_progression_diag
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{3.7cm} >{\raggedright\arraybackslash}p{2.6cm} >{\raggedleft\arraybackslash}p{1.8cm} >{\raggedleft\arraybackslash}X}
-\caption{Representative predicted contrasts from the retained player fixed-effects progression models.}\label{tab:progression-fe-contrasts}\\
+\caption{Representative predicted contrasts from the retained fixed-effects progression models.}\label{tab:progression-fe-contrasts}\\
 \toprule
 \textbf{Predictor} & \textbf{Target} & \textbf{Predicted Difference} & \textbf{95\% CI} \\
 \midrule
@@ -3284,9 +3351,11 @@ Feature Set & \texttt{Core Plus Repertoire} \\
 \end{xltabular}
 ```
 
+<!-- move to notes for table below: Notes: After construction and any feature-specific transformations, all retained variables were standardized as z-scores via scale(as.matrix(X_raw)) -->
+
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{2.9cm} >{\raggedright\arraybackslash}p{1.8cm} X >{\raggedright\arraybackslash}p{2.8cm}}
-\caption{Feature construction for the retained clustering feature set. After construction and any feature-specific transformations, all retained variables were standardized as z-scores via \texttt{scale(as.matrix(X\us raw))}.}\label{tab:categorization-feature-construction}\\
+\caption{Feature construction for the retained clustering feature set.}\label{tab:categorization-feature-construction}\\
 \toprule
 \textbf{Final Feature} & \textbf{Source Table} & \textbf{Derived Construction} & \textbf{Exact Transform} \\
 \midrule
@@ -3329,7 +3398,7 @@ Feature Set & \texttt{Core Plus Repertoire} \\
 
 ```{r Cluster Structure}
 #| label: fig-cluster-structure
-#| fig-cap: "Lorem ipsum."
+#| fig-cap: "Two-dimensional PCA and UMAP projections of the retained clustering sample, colored by cluster."
 #| fig-align: center
 #| fig-pos: H
 
@@ -3340,11 +3409,11 @@ p_cluster_structure
 
 ### Standardized Cluster-Center Views
 
-<!-- The first table in this section needs to be reformatted, as it currently stretches off the page -->
+<!-- Move to notes for table below: Positive values indicate above-average cluster means on the standardized feature scale, while negative values indicate below-average means.-->
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedleft\arraybackslash}p{1.2cm} >{\raggedleft\arraybackslash}p{1.6cm} >{\raggedleft\arraybackslash}p{1.7cm} >{\raggedleft\arraybackslash}p{1.8cm} >{\raggedleft\arraybackslash}p{1.6cm} >{\raggedleft\arraybackslash}p{1.5cm} >{\raggedleft\arraybackslash}X}
-\caption{Standardized performance and outcome centers for the retained player-categorization solution. Positive values indicate above-average cluster means on the standardized feature scale, while negative values indicate below-average means.}\label{tab:categorization-standardized-performance}\\
+\caption{Standardized performance and outcome centers for the retained player-categorization solution.}\label{tab:categorization-standardized-performance}\\
 \toprule
 \textbf{Cluster} & \textbf{$n$} & \textbf{Avg. Rating} & \textbf{Rating Diff.} & \textbf{Avg. Moves} & \textbf{Win Rate} & \textbf{Draw Rate} \\
 \midrule
@@ -3402,9 +3471,11 @@ p_cluster_structure
 
 ### Time-Control Composition and Persistence
 
+<!-- Move to notes for table below: Shares are computed within time control rather than across the full clustering sample.-->
+
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedleft\arraybackslash}p{1.6cm} >{\raggedleft\arraybackslash}p{2.0cm} >{\raggedleft\arraybackslash}X}
-\caption{Cluster shares within each time-control bucket. Shares are computed within time control rather than across the full clustering sample.}\label{tab:categorization-timecontrol-shares}\\
+\caption{Cluster shares within each time-control bucket.}\label{tab:categorization-timecontrol-shares}\\
 \toprule
 \textbf{Time Control} & \textbf{Cluster} & \textbf{Share Within Time Control} \\
 \midrule
@@ -3445,9 +3516,11 @@ Rapid & 6 & 0.180 \\
 \end{xltabular}
 ```
 
+<!-- Move to notes for table below: Shares are computed within time control rather than across the full clustering sample. Persistence is measured as the share of adjacent player-month pairs remaining in the same cluster.-->
+
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedleft\arraybackslash}p{1.6cm} >{\raggedleft\arraybackslash}p{2.2cm} >{\raggedleft\arraybackslash}p{2.2cm} >{\raggedleft\arraybackslash}X}
-\caption{Month-to-month persistence and most common transition destination for the retained player-categorization clusters. Persistence is measured as the share of adjacent player-month pairs remaining in the same cluster.}\label{tab:categorization-persistence}\\
+\caption{Month-to-month persistence and most common transition destination for the retained player-categorization clusters.}\label{tab:categorization-persistence}\\
 \toprule
 \textbf{Cluster} & \textbf{Adjacent Pairs} & \textbf{Same-Cluster Rate} & \textbf{Most Common Next Cluster If Switched} \\
 \midrule
@@ -3514,6 +3587,7 @@ Cluster Balance & Max. Cluster Share & 0.217 \\
 \end{xltabular}
 ```
 
+<!--
 
 ## Reproducibility Details (Placeholder) {#sec-appendix-g}
 
@@ -3523,6 +3597,8 @@ Lorem Ipsum
 ```{r cleaning,echo=FALSE,eval=FALSE}
 # Write your cleaning code here
 ```
+
+-->
 
 <!--
 ```{r ref.label=knitr::all_labels()}
