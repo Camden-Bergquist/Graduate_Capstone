@@ -275,8 +275,7 @@ panel_len <- dbGetQuery(con, sprintf("
 ggplot(panel_len, aes(x = n_months, y = n_players)) +
   geom_col(fill = "steelblue", color = "steelblue") +
   scale_y_continuous() +
-  labs(x = "Months Observed per Player", y = "Players",
-       title = "Panel Depth: How Long Players Remain Observable") +
+  labs(x = "Months Observed per Player", y = "Players") +
   theme_few()
 ```
 
@@ -401,7 +400,6 @@ ggplot(trend_rating, aes(x = rating_bin, y = share, color = opening, group = ope
   labs(
     x = "Rating",
     y = "Share of Player-Games",
-    title = paste0("Opening Share by Rating (Blitz)"),
     color = ""
   ) +
   scale_color_few() +
@@ -450,7 +448,7 @@ ggplot(time_bin, aes(x=rating_bin, y=mean_time_spent)) +
       rapid = "Rapid",
       classical = "Classical"
     ))) +
-  labs(x="Player Rating", y="Average Time per Move (Seconds)", title="Thinking Time Varies by Skill and Time Control") +
+  labs(x = "Player Rating", y = "Average Time per Move (Seconds)") +
   theme_few() + 
   theme(
     panel.grid.major.x = element_blank(),
@@ -1095,7 +1093,8 @@ The intent of metagame-dynamics models was to characterize the state and evoluti
 
 ```{=latex}
 \begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{2.6cm} >{\raggedright\arraybackslash}p{3.5cm} >{\raggedleft\arraybackslash}p{2.1cm} >{\raggedleft\arraybackslash}p{1.8cm} >{\raggedleft\arraybackslash}X}
-\caption{Estimated time-trend effects from the retained macro metagame models.}\label{tab:metagame-macro-estimates}\\
+\caption{Estimated time-trend effects from the retained macro metagame models.}
+\label{tab:metagame-macro-estimates}\\
 \toprule
 \textbf{Outcome} & \textbf{Effect} & \textbf{Estimate} & \textbf{SE} & \textbf{\textit{p}-Value} \\
 \midrule
@@ -1225,7 +1224,7 @@ Table \ref{tab:opening-popularity-rating-profile} provides representative predic
 ```
 
 
-Temporal changes are present, but modest in magnitude. The over-time movement in the retained multinomial model is directionally consistent with the broader metagame results from @sec-metagame-dynamics-3: the residual “Other” category tends to gain share, while the largest named increases and decreases are comparatively small. This again points away from a story of dramatic named-opening turnover and toward one of distributed compositional change.
+Temporal changes are present, but modest in magnitude. The over-time movement in the retained multinomial model is directionally consistent with the broader metagame results from @sec-metagame-dynamics-3: The residual “Other” category tends to gain share, while the largest named increases and decreases are comparatively small. This again points away from a story of dramatic named-opening turnover and toward one of distributed compositional change.
 
 The substantive takeaway is that opening choice is highly structured, but most of that structure is cross-sectional as opposed to temporal. Rating and time control organize the opening landscape more strongly than month-to-month drift does. Over time, the opening ecosystem shifts, but the magnitude of that shift is much smaller than the difference between lower- and higher-rated opening distributions. Additional opening-popularity comparisons and supplemental results are reported in Appendix [-@sec-appendix-c].
 
@@ -1448,7 +1447,9 @@ The cluster distributions also vary by time control. Some profiles are more comm
 # Potential second sentence for caption: "Rows sum to 100%, and transitions are computed within player and time control for consecutive months."
 
 p_cluster_heatmap <- readRDS("Paper_files/figure-rds/p_transition_heat.rds")
-p_cluster_heatmap
+p_cluster_heatmap +
+  labs(title = NULL, subtitle = NULL) +
+  theme(legend.position = "bottom")
 ```
 
 @fig-cluster-heatmap helps clarify how these profiles should be interpreted over time. Some clusters show substantial persistence from one month to the next, but switching is also common, and the transition structure is clearly patterned. This is the key reason the clusters are better understood as recurring behavioral states. They capture meaningful structure in player behavior, but that structure appears fluid enough that many players move among states over time instead of remaining locked into a single class.
@@ -2196,7 +2197,7 @@ ggplot(gdist, aes(x=games)) +
   geom_histogram(bins = 30, fill = "steelblue", color = "steelblue") +
   coord_cartesian(xlim = c(0, 250)) +
   scale_y_continuous(labels = label_comma()) +
-  labs(x = "Games per Player in a Given Month", y = "Rows", title = "Player-Month Reliability Varies Widely") +
+  labs(x = "Games per Player in a Given Month", y = "Rows") +
   theme_few()
 ```
 
@@ -2249,8 +2250,6 @@ ggplot(support_by_rating2, aes(x = rating_bin, y = support)) +
   labs(
     x = "Rating Bin",
     y = NULL,
-    title = "Support Across Rating Bins by Time Control",
-    subtitle = "Compares POM_TC Row Counts with Summed Games"
   ) +
   theme_few() +
   theme(
@@ -2288,8 +2287,7 @@ chg <- dbGetQuery(con, sprintf("
 
 ggplot(chg, aes(x=d_rating)) +
   geom_histogram(bins=80, fill = "steelblue", color = "steelblue") +
-  labs(x = "Month-to-Month Change in Average Rating", y = "Count", 
-       title = "Distribution of Within-Player Rating Change") +
+  labs(x = "Month-to-Month Change in Average Rating", y = "Count") +
   theme_few()
 ```
 
@@ -2323,9 +2321,7 @@ vol <- dbGetQuery(con, sprintf("
 ggplot(vol, aes(x = games, y = abs_d_rating)) +
   geom_point(alpha = 0.15) +
   scale_x_continuous(trans = "log10") +
-  labs(x = "Games per Month (Log-Transformed)", y = "Absolute Change in Rating (|Δ|)",
-       title = "Monthly Rating Volatility Shrinks as Game Volume Rises",
-       subtitle = "Log-Transformed for Legibility") +
+  labs(x = "Games per Month (Log-Transformed)", y = "Absolute Change in Rating") + # Consider returning (|Δ|) to y-axis label
   theme_few()
 ```
 
@@ -2374,9 +2370,8 @@ p1 <- ggplot(zero_panel, aes(x = x_cat, y = n)) +
   ) +
   scale_y_continuous(labels = label_comma()) +
   labs(
-    x = NULL,
-    y = "Rows",
-    title = "Exact Zero Mass"
+    x = "Exact-Zero Mass",
+    y = "Rows"
   ) +
   theme_few()
 
@@ -2400,8 +2395,7 @@ p2 <- ggplot(positive_panel, aes(x = low_time_rate)) +
   scale_y_continuous(labels = label_comma()) +
   labs(
     x = "Low-Time Rate",
-    y = "Rows",
-    title = "Low-Time Distribution"
+    y = "Rows"
   ) +
   theme_few()
 
@@ -2504,9 +2498,7 @@ ggplot(ltr_scatter_all, aes(x = low_time_rate_all, y = d_rating_next)) +
   ylim(-225, 225) +
   labs(
     x = "Low-Time Rate",
-    y = "Next-Month Δ Rating",
-    title = "Time Trouble vs Next-Month Rating Change",
-    subtitle = "Collapsed Across Time Controls"
+    y = "Next-Month Rating Change"
   ) +
   theme_few()
 ```
@@ -2563,9 +2555,7 @@ plot_opening_trends <- function(tc_use, fig_title) {
     labs(
       x = "Month",
       y = "Share of Games",
-      color = "",
-      title = fig_title,
-      subtitle = "Top Eight Openings in Terms of Game Share"
+      color = ""
     ) +
     scale_color_few() +
     theme_few() +
@@ -2642,8 +2632,7 @@ ggplot(phase_long, aes(x=rating_bin, y=sec, color=phase, group=phase)) +
       rapid = "Rapid",
       classical = "Classical"
     ))) +
-  labs(x="Rating", y="Seconds per Move", color = "Phase",
-       title="Phase Time Allocation by Rating") +
+  labs(x="Rating", y="Average Time per Move (Seconds)", color = "Phase") +
   scale_color_few(labels = c("Endgame", "Middlegame", "Opening")) +
   theme_few() + 
   theme(
@@ -2710,10 +2699,8 @@ div_strata <- div_strata |>
 ggplot(div_strata, aes(x=opening_diversity, y=mean_d, color=games_bin)) +
   geom_line(alpha = 1) +
   facet_wrap(~rating_bin, scales="free_y") +
-  labs(x="Opening Diversity (Within-Month)", y="Mean Next-Month Δ Rating",
-       color="Games",
-       title="Opening Diversity vs Improvement",
-       subtitle = "Stratified by Games and Rating") +
+  labs(x = "Opening Diversity (Within-Month)", y = "Mean Next-Month Rating Change",
+       color="Games") +
   scale_color_few() +
   theme_few() + 
   theme(
@@ -2798,7 +2785,8 @@ Opening Composition & Multinomial & Rapid & 0.923 \\
 #| fig-height: 5
 
 p_metagame_diag <- readRDS("Paper_files/figure-rds/p_macro_diag.rds")
-p_metagame_diag
+p_metagame_diag +
+  labs(title = NULL)
 ```
 
 ```{=latex}
@@ -2864,7 +2852,8 @@ Weighted Least Squares (Per Opening) & Opening Share & 80--81 & 0.0024--0.0046 \
 #| fig-pos: H
 
 p_opening_diag <- readRDS("Paper_files/figure-rds/p_opening_calib.rds")
-p_opening_diag
+p_opening_diag +
+  labs(title = NULL, subtitle = NULL)
 ```
 
 ```{=latex}
@@ -2954,8 +2943,9 @@ Player-Month & Interaction & 1.832 \\
 ```
 
 ```{=latex}
-\begin{xltabular}{\textwidth}{>{\raggedright\arraybackslash}p{4.2cm} >{\raggedleft\arraybackslash}X}
-\caption{Held-out predictive error for retained low-time-rate models.}\label{tab:timeuse-lowtime-model-comparison}\\
+\begin{xltabular}[l]{\textwidth}{@{}l>{\raggedleft\arraybackslash}X@{}}
+\caption{Held-out predictive error for retained low-time-rate models.}
+\label{tab:timeuse-lowtime-model-comparison}\\
 \toprule
 \textbf{Specification} & \textbf{WRMSE} \\
 \midrule
@@ -2974,7 +2964,7 @@ Player-Month & Interaction & 1.832 \\
 \endlastfoot
 
 Fractional Quasibinomial & 0.07445 \\
-Binomial Approximation & 0.07445 \\
+Binomial Approximation   & 0.07445 \\
 \end{xltabular}
 ```
 
@@ -2987,7 +2977,7 @@ Binomial Approximation & 0.07445 \\
 #| fig-pos: H
 
 p_timeuse_diag <- readRDS("Paper_files/figure-rds/p_lowtime_calib.rds")
-p_timeuse_diag
+p_timeuse_diag # This is a patchwork object so modifying it directly through ggplot calls doesn't work well
 ```
 
 ```{=latex}
@@ -3237,7 +3227,8 @@ Player + Month Fixed Effects & 95{,}428 & 0.2744 \\
 #| fig-pos: H
 
 p_progression_diag <- readRDS("Paper_files/figure-rds/p_prog_fe_binned.rds")
-p_progression_diag
+p_progression_diag +
+  labs(title = NULL, subtitle = NULL)
 ```
 
 ```{=latex}
