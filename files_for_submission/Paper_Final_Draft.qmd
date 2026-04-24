@@ -1112,29 +1112,29 @@ The intent of metagame-dynamics models was to characterize the state and evoluti
 
 \midrule
 \multicolumn{5}{@{}p{\dimexpr\textwidth-2\tabcolsep\relax}@{}}{%
-\footnotesize \textbf{Note:} Newey--West standard errors. Baseline time trend is for blitz; interaction terms are relative to blitz.
+\footnotesize \textbf{Note:} Newey--West standard errors. Baseline time trend is for blitz; interaction terms are relative to blitz. '$N_{\text{eff}}$' represents number of effective openings.
 }\\
 \bottomrule
 \endlastfoot
 
 Draw Rate & Baseline Time Trend & $-2.322\times10^{-5}$ & $1.849\times10^{-5}$ & 0.215 \\
-Draw Rate & Classical $\times$ Time & $2.615\times10^{-5}$ & $1.073\times10^{-4}$ & 0.808 \\
+Draw Rate & Classical $\times$ Time & $-0.0002615$ & 0.0001073 & 0.808 \\
 Draw Rate & Rapid $\times$ Time & $9.697\times10^{-6}$ & $1.909\times10^{-5}$ & 0.614 \\
 
 HHI Conc. & Baseline Time Trend & $-2.283\times10^{-6}$ & $6.890\times10^{-7}$ & 0.002 \\
 HHI Conc. & Classical $\times$ Time & $-1.694\times10^{-5}$ & $7.154\times10^{-6}$ & 0.022 \\
 HHI Conc. & Rapid $\times$ Time & $-7.440\times10^{-6}$ & $1.502\times10^{-6}$ & $< 0.001$ \\
 
-$N_{\text{eff}}$ & Baseline Time Trend & $1.021\times10^{-1}$ & $3.096\times10^{-2}$ & 0.002 \\
-$N_{\text{eff}}$ & Classical $\times$ Time & $5.556\times10^{-1}$ & $2.485\times10^{-1}$ & 0.030 \\
-$N_{\text{eff}}$ & Rapid $\times$ Time & $2.411\times10^{-1}$ & $5.453\times10^{-2}$ & $< 0.001$ \\
+$N_{\text{eff}}$ & Baseline Time Trend & 0.1021 & 0.0310 & 0.002 \\
+$N_{\text{eff}}$ & Classical $\times$ Time & 0.5556 & 0.2485 & 0.030 \\
+$N_{\text{eff}}$ & Rapid $\times$ Time & 0.2411 & 0.0545 & $< 0.001$ \\
 
-Average Moves & Baseline Time Trend & $-3.957\times10^{-4}$ & $2.461\times10^{-3}$ & 0.873 \\
-Average Moves & Classical $\times$ Time & $-1.816\times10^{-2}$ & $1.526\times10^{-2}$ & 0.240 \\
-Average Moves & Rapid $\times$ Time & $-3.840\times10^{-3}$ & $3.455\times10^{-3}$ & 0.272 \\
+Average Moves & Baseline Time Trend & $-0.0003957$ & 0.0025 & 0.873 \\
+Average Moves & Classical $\times$ Time & $-0.01816$ & 0.0153 & 0.240 \\
+Average Moves & Rapid $\times$ Time & $-0.003840$ & 0.0035 & 0.272 \\
 
 Upset Rate & Baseline Time Trend & $9.540\times10^{-5}$ & $4.099\times10^{-5}$ & 0.024 \\
-Upset Rate & Classical $\times$ Time & $1.011\times10^{-4}$ & $2.997\times10^{-4}$ & 0.737 \\
+Upset Rate & Classical $\times$ Time & 0.0001011 & 0.0002997 & 0.737 \\
 Upset Rate & Rapid $\times$ Time & $7.481\times10^{-5}$ & $6.067\times10^{-5}$ & 0.223 \\
 \end{xltabular}
 ```
@@ -1312,7 +1312,7 @@ Table \ref{tab:progression-fe-results} provides the central inferential summary.
 
 \toprule
 \textbf{Predictor} & \textbf{Target} & \textbf{Estimate} & \textbf{95\% CI} & \textbf{\textit{p}-Value} \\
-\midrule
+\midrule  
 \endhead
 
 \midrule
@@ -1320,32 +1320,32 @@ Table \ref{tab:progression-fe-results} provides the central inferential summary.
 \endfoot
 
 \midrule
-\multicolumn{4}{@{}p{\dimexpr\textwidth-2\tabcolsep\relax}@{}}{%
-\footnotesize \textbf{Note:} "Switched opening" represents switching one's most played opening.
+\multicolumn{5}{@{}p{\dimexpr\textwidth-2\tabcolsep\relax}@{}}{%
+\footnotesize \textbf{Note:} 'Avg. Rating' represents current average rating; 'Switched Opening' represents switching one's most played opening.
 }\\
 \bottomrule
 \endlastfoot
 
-Current Avg. Rating & 1-Month Change & -0.469 & [-0.511, -0.427] & $< 0.001$ \\
+Avg. Rating & 1-Month Change & -0.469 & [-0.511, -0.427] & $<$ 0.001 \\
 Games Played & 1-Month Change & -0.00295 & [-0.0101, 0.00420] & 0.398 \\
-Avg. Moves & 1-Month Change & 1.403 & [1.213, 1.594] & $< 0.001$ \\
-Opening Diversity & 1-Month Change & 0.162 & [0.129, 0.194] & $< 0.001$ \\
-Top-Opening Share & 1-Month Change & 6.697 & [-3.782, 17.176] & 0.196 \\
+Avg. Moves & 1-Month Change & 1.403 & [1.213, 1.594] & $<$ 0.001 \\
+Opening Diversity & 1-Month Change & 0.162 & [0.129, 0.194] & $<$ 0.001 \\
+Top-Opening Shr. & 1-Month Change & 6.697 & [-3.782, 17.176] & 0.196 \\
 Switched Opening & 1-Month Change & 2.722 & [1.035, 4.409] & 0.003 \\
 
-Current Avg. Rating & 3-Month Change & -0.800 & [-0.859, -0.740] & $< 0.001$ \\
+Avg. Rating & 3-Month Change & -0.800 & [-0.859, -0.740] & $<$ 0.001 \\
 Games Played & 3-Month Change & 0.00345 & [-0.00693, 0.0138] & 0.494 \\
-Avg. Moves & 3-Month Change & 1.112 & [0.870, 1.353] & $< 0.001$ \\
+Avg. Moves & 3-Month Change & 1.112 & [0.870, 1.353] & $<$ 0.001 \\
 Opening Diversity & 3-Month Change & 0.0614 & [0.0165, 0.106] & 0.010 \\
-Top-Opening Share & 3-Month Change & -3.668 & [-17.236, 9.901] & 0.577 \\
+Top-Opening Shr. & 3-Month Change & -3.668 & [-17.236, 9.901] & 0.577 \\
 Switched Opening & 3-Month Change & 2.419 & [0.249, 4.589] & 0.031 \\
 
-Current Avg. Rating & Abs. 1-Month Change & 0.00027 & [-0.0107, 0.0112] & 0.959 \\
+Avg. Rating & Abs. 1-Month Change & 0.00027 & [-0.0107, 0.0112] & 0.959 \\
 Games Played & Abs. 1-Month Change & 0.00110 & [-0.00469, 0.00689] & 0.694 \\
-Avg. Moves & Abs. 1-Month Change & -0.334 & [-0.503, -0.165] & $< 0.001$ \\
-Opening Diversity & Abs. 1-Month Change & -0.0712 & [-0.0918, -0.0505] & $< 0.001$ \\
-Top-Opening Share & Abs. 1-Month Change & -5.837 & [-13.635, 1.961] & 0.133 \\
-Switched Opening & Abs. 1-Month Change & -3.755 & [-4.344, -3.166] & $< 0.001$ \\
+Avg. Moves & Abs. 1-Month Change & -0.334 & [-0.503, -0.165] & $<$ 0.001 \\
+Opening Diversity & Abs. 1-Month Change & -0.0712 & [-0.0918, -0.0505] & $<$ 0.001 \\
+Top-Opening Shr. & Abs. 1-Month Change & -5.837 & [-13.635, 1.961] & 0.133 \\
+Switched Opening & Abs. 1-Month Change & -3.755 & [-4.344, -3.166] & $<$ 0.001 \\
 \end{xltabular}
 ```
 
@@ -3326,7 +3326,7 @@ p_progression_diag +
 
 \midrule
 \multicolumn{4}{@{}p{\dimexpr\textwidth-2\tabcolsep\relax}@{}}{%
-\footnotesize \textbf{Note:} "Switched opening" represents switching one's most played opening. Predicted differences for opening-switching was calculated on values 0 vs 1; predicted differences for all other predictors was calculated on the 25th percentile vs the 75th percentile.
+\footnotesize \textbf{Note:} 'Switched Opening' represents switching one's most played opening. Predicted differences for opening-switching was calculated on values 0 vs 1; predicted differences for all other predictors was calculated on the 25th percentile vs the 75th percentile.
 }\\
 \bottomrule
 \endlastfoot
@@ -3449,7 +3449,7 @@ Feature Set & \texttt{Core Plus Repertoire} \\
 
 \midrule
 \multicolumn{4}{@{}p{\dimexpr\textwidth-2\tabcolsep\relax}@{}}{%
-\footnotesize \textbf{Note:} After construction and any feature-specific transformations, all retained variables were standardized as z-scores via \texttt{scale(as.matrix(X\us raw))}
+\footnotesize \textbf{Note:} After construction and any feature-specific transformations, all retained variables were standardized as z-scores via \texttt{scale(as.matrix(X\us raw))}.
 }\\
 \bottomrule
 \endlastfoot
