@@ -24,6 +24,7 @@ library(forcats) # factor helpers (bins/labels)
 # Visualization (EDA + diagnostics)
 library(ggplot2)
 library(ggthemes)
+library(ggh4x)
 library(scales)
 library(patchwork) # combine plots
 library(kableExtra)
@@ -1213,9 +1214,9 @@ macro_time_shape_tbl |>
 macro_claims <- bind_rows(
   extract_hac_terms(eco_hhi_wlm,  "eco_hhi",  c("t", "tc_bucketclassical:t", "tc_bucketrapid:t")),
   extract_hac_terms(eco_neff_wlm, "eco_neff", c("t", "tc_bucketclassical:t", "tc_bucketrapid:t")),
-  extract_hac_terms(draw_wlm,     "draw",     c("t", "tc_bucketclassical:t", "tc_bucketrapid:t")),
-  extract_hac_terms(upset_wlm,    "upset",    c("t", "tc_bucketclassical:t", "tc_bucketrapid:t")),
-  extract_hac_terms(moves_wlm,    "moves",    c("t", "tc_bucketclassical:t", "tc_bucketrapid:t"))
+  extract_hac_terms(draw_wlm,     "draw", c("t", "tc_bucketclassical:t", "tc_bucketrapid:t")),
+  extract_hac_terms(upset_wlm,    "upset", c("t", "tc_bucketclassical:t", "tc_bucketrapid:t")),
+  extract_hac_terms(moves_wlm,    "moves", c("t", "tc_bucketclassical:t", "tc_bucketrapid:t"))
 ) |>
   mutate(
     sign = sign_label(estimate),
@@ -1424,7 +1425,10 @@ pred_grid <- eco |>
     tc_bucket = c("blitz", "rapid", "classical")
   ) |>
   mutate(
-    tc_bucket = factor(tc_bucket, levels = c("blitz", "rapid", "classical"))
+    tc_bucket = factor(
+      tc_bucket,
+      levels = c("blitz", "rapid", "classical")
+    )
   )
 
 # Helper to get lm fitted values + pointwise 95% CI
@@ -1448,74 +1452,84 @@ plot_df <- bind_rows(
 ) |>
   mutate(
     metric = factor(metric, levels = c("HHI", "N_eff")),
-    tc_bucket = fct_recode(tc_bucket,
+    tc_bucket = fct_recode(
+      tc_bucket,
       "Blitz" = "blitz",
       "Rapid" = "rapid",
       "Classical" = "classical"
-    ),
-    metric_label = factor(
-      metric,
-      levels = c("HHI", "N_eff"),
-      labels = c("HHI", "N_eff")
     )
   )
 
-# Facet labels as plotmath expressions
-facet_labs <- labeller(
-  metric_label = label_parsed
-)
-
-p_macro_fit <- ggplot(
+p_macro_fit_final <- ggplot(
   plot_df,
-  aes(x = month_date, y = fit, color = tc_bucket, fill = tc_bucket, group = tc_bucket)
+  aes(
+    x = month_date,
+    y = fit,
+    color = tc_bucket,
+    fill = tc_bucket,
+    group = tc_bucket
+  )
 ) +
   {
     if (show_bands) {
-      geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.20, linewidth = 0, color = NA)
+      geom_ribbon(
+        aes(ymin = lwr, ymax = upr),
+        alpha = 0.20,
+        linewidth = 0,
+        color = NA
+      )
     }
   } +
   geom_line(linewidth = 0.9) +
   facet_wrap(
-    ~ metric_label,
+    ~ metric,
     ncol = 1,
     scales = "free_y",
-    labeller = facet_labs
+    labeller = as_labeller(
+      c(
+        HHI   = "Panel~A*':'~Fitted~HHI~Over~Time~by~Time~Control",
+        N_eff = "Panel~B*':'~Fitted~N[eff]~Over~Time~by~Time~Control"
+      ),
+      label_parsed
+    )
   ) +
+  scale_x_date(
+    limits = as.Date(c("2024-01-01", "2025-12-01")),
+    breaks = as.Date(c("2024-06-01", "2024-12-01", "2025-06-01", "2025-12-01")),
+    date_labels = "%Y-%m"
+  ) +
+  facetted_pos_scales(
+    y = list(
+      metric == "HHI" ~ scale_y_continuous(
+        limits = c(0.0047, 0.0059),
+        breaks = c(0.0048, 0.0053, 0.0058),
+        labels = label_number()
+      ),
+      metric == "N_eff" ~ scale_y_continuous(
+        limits = c(165, 215),
+        breaks = seq(170, 210, by = 10),
+        labels = label_number()
+      )
+    )
+  ) +
+  scale_color_few() +
+  scale_fill_few() +
   labs(
     x = "Month",
     y = NULL,
     color = NULL,
     fill = NULL
   ) +
-  scale_y_continuous(
-    labels = label_number()
-  ) +
-  scale_color_few() +
-  scale_fill_few() +
   theme_few() +
-    theme(
+  theme(
     panel.grid.major.x = element_blank(),
     panel.grid.major.y = element_line(linewidth = 0.3, colour = "grey85"),
-    panel.grid.minor = element_blank()
-  ) +
-  theme(
+    panel.grid.minor = element_blank(),
     legend.position = "bottom",
-    axis.text.x = element_text(angle = 60, hjust = 1),
+    axis.text.x = element_text(angle = 45, hjust = 1),
     strip.text = element_text(face = "bold")
   )
 
-# Replace default strip text with parsed math labels
-p_macro_fit_final <- p_macro_fit +
-  facet_wrap(
-    ~ metric,
-    ncol = 1,
-    scales = "free_y",
-    labeller = as_labeller(c(
-      HHI   = "Panel~A*':'~Fitted~HHI~Over~Time~by~Time~Control",
-      N_eff = "Panel~B*':'~Fitted~N[eff]~Over~Time~by~Time~Control"
-    ), label_parsed)
-  )
-  
 p_macro_fit_final
 
 saveRDS(p_macro_fit_final, "../files_for_submission/Paper_files/figure-rds/p_macro_fit.rds")
