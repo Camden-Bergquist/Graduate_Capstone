@@ -12,7 +12,7 @@ library(ggplot2)
 library(scales)
 library(ggthemes)
 
-# Paths (adjust if needed)
+# Paths
 base_dir <- "../data/derived/full_datasets"
 paths <- list(
   pm = file.path(base_dir, "player_month.parquet"),
@@ -25,7 +25,7 @@ paths <- list(
 con <- dbConnect(duckdb(), dbdir=":memory:")
 on.exit(dbDisconnect(con, shutdown=TRUE), add=TRUE)
 
-# Helper: safe read_parquet path quoting
+# Safe read_parquet helper using path quoting
 qpath <- function(p) paste0("'", gsub("'", "''", normalizePath(p, winslash="/", mustWork=FALSE)), "'")
 ```
 
@@ -234,13 +234,12 @@ ggplot(time_bin, aes(x=rating_bin, y=mean_time_spent)) +
 ```
 
 ```{r Opening by Rating}
-# settings
-tc_use <- "blitz"   # "blitz" / "rapid" / "classical"
-bin_width <- 200        # try 100 for more detail, 200 for smoother
-top_k <- 8             # number of openings to plot
-min_bin_total <- 2000  # min player-games in a rating bin (stability filter)
+tc_use <- "blitz" # "blitz" / "rapid" / "classical"
+bin_width <- 200 
+top_k <- 8 # number of openings to plot
+min_bin_total <- 2000  # min player-games in a rating bin
 
-# 1) pick top openings within tc_bucket (weighted by games)
+# Pick top openings within tc_bucket (weighted by games)
 top_openings <- dbGetQuery(con, sprintf("
   WITH x AS (
     SELECT opening, SUM(games) AS total_games
@@ -259,9 +258,9 @@ open_list <- paste0(
   "('", paste(gsub("'", "''", top_openings$opening), collapse="','"), "')"
 )
 
-# 2) compute opening share within rating bins
-#    - rating_bin_lo is based on avg_rating from the player-opening aggregation
-#    - use SUM(games) as weights so "share" is in terms of player-games
+# Compute opening share within rating bins
+## Rating_bin_lo is based on avg_rating from the player-opening aggregation
+## Use SUM(games) as weights, so share is in terms of player-games
 trend_rating <- dbGetQuery(con, sprintf("
   WITH base AS (
     SELECT
@@ -305,14 +304,14 @@ trend_rating <- dbGetQuery(con, sprintf("
 ", qpath(paths$pom_tc), tc_use, open_list,
    bin_width, bin_width, bin_width, min_bin_total))
 
-# nicer x labels
-trend_rating <- trend_rating %>%
+# Nicer labels
+trend_rating <- trend_rating |>
   mutate(
     rating_bin = paste0(rating_bin_lo, "\u2013", rating_bin_hi),
     rating_bin = factor(rating_bin, levels = unique(rating_bin))
   )
 
-# plot
+
 ggplot(trend_rating, aes(x = rating_bin, y = share, color = opening, group = opening)) +
   geom_line() +
   geom_point(size = 1) +
@@ -670,13 +669,12 @@ ggplot(miss, aes(x=rating_bin, y=endgame_missing_rate)) +
 ```
 
 ```{r Distribution Sanity Checks}
-# How big is ptm_tc?
 dbGetQuery(con, sprintf("
   SELECT COUNT(*) AS n
   FROM read_parquet(%s)
 ", qpath(paths$ptm_tc)))
 
-# Distribution sanity checks (games, move_rows, low_time_rate)
+# Distribution sanity checks
 dbGetQuery(con, sprintf("
   SELECT
     MIN(games) AS min_games,
@@ -692,7 +690,7 @@ dbGetQuery(con, sprintf("
   WHERE low_time_rate IS NOT NULL
 ", qpath(paths$ptm_tc)))
 
-# How many rows have a "next" month inside ptm_tc itself?
+# How many rows have a "next" month inside ptm_tc?
 dbGetQuery(con, sprintf("
   WITH x AS (
     SELECT player, month, tc_bucket, avg_rating
@@ -714,8 +712,8 @@ dbGetQuery(con, sprintf("
 
 
 ```{r LTR Bin}
-min_games_pm   <- 10     # require at least this many games in the month (across all TCs)
-min_moves_ptm  <- 45    # require at least this many move rows in the month (across all TCs)
+min_games_pm <- 10  # require at least this many games in the month (across all time controls)
+min_moves_ptm <- 45  # require at least this many move rows in the month (across all time controls)
 
 ltr_scatter_all <- dbGetQuery(con, sprintf("
   WITH pm_tc AS (
@@ -938,10 +936,9 @@ ggplot(d3, aes(x=opening_diversity, y=d_rating_3m)) +
 ```
 
 ```{r Repertoire Churn vs Improvement}
-# settings
-min_games_pm    <- 20   # require stable months for rating deltas
-min_games_pom   <- 10   # require enough opening games to define a repertoire
-bin_width       <- 200  # rating bin width for faceting (optional)
+min_games_pm  <- 20 # require stable months for rating deltas
+min_games_pom <- 10 # require enough opening games to define a repertoire
+bin_width <- 200 # rating bin width for faceting
 
 churn <- dbGetQuery(con, sprintf("
   WITH pom AS (
@@ -1079,8 +1076,8 @@ churn <- dbGetQuery(con, sprintf("
    bin_width, bin_width
 ))
 
-# bin churn for stable EDA curves
-churn <- churn %>%
+# Bin churn for stable curves
+churn <- churn |>
   mutate(
     churn_bin = cut(
       churn_cosine,
@@ -1090,14 +1087,14 @@ churn <- churn %>%
     )
   )
 
-churn_summ <- churn %>%
-  group_by(churn_bin) %>%
+churn_summ <- churn |>
+  group_by(churn_bin) |>
   summarise(
     n = n(),
     mean_d = mean(d_rating_next, na.rm = TRUE),
     med_d  = median(d_rating_next, na.rm = TRUE),
     .groups = "drop"
-  ) %>%
+  ) |>
   filter(!is.na(churn_bin))
 
 ggplot(churn_summ, aes(x = churn_bin, y = mean_d)) +
@@ -1111,8 +1108,7 @@ ggplot(churn_summ, aes(x = churn_bin, y = mean_d)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-# Optional: a more interpretable variant (share of games in brand-new openings)
-churn_new_summ <- churn %>%
+churn_new_summ <- churn |>
   mutate(
     new_bin = cut(
       new_opening_share,
@@ -1120,13 +1116,13 @@ churn_new_summ <- churn %>%
       labels = c("0%", "0–5%", "5–10%", "10–20%", "20–35%", "35–50%", ">50%"),
       right = TRUE
     )
-  ) %>%
-  group_by(new_bin) %>%
+  ) |>
+  group_by(new_bin) |>
   summarise(
     n = n(),
     mean_d = mean(d_rating_next, na.rm = TRUE),
     .groups = "drop"
-  ) %>%
+  ) |>
   filter(!is.na(new_bin))
 
 ggplot(churn_new_summ, aes(x = new_bin, y = mean_d)) +
@@ -1141,10 +1137,9 @@ ggplot(churn_new_summ, aes(x = new_bin, y = mean_d)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
-```{r LowTimeRate Binned vs Improvement}
-# settings
-min_games_pm   <- 10
-min_moves_ptm  <- 40
+```{r LTR Binned vs Improvement}
+min_games_pm <- 10
+min_moves_ptm <- 40
 
 ltr_bins <- dbGetQuery(con, sprintf("
   WITH pm_tc AS (
@@ -1218,8 +1213,8 @@ ltr_bins <- dbGetQuery(con, sprintf("
    qpath(paths$ptm_tc), min_moves_ptm
 ))
 
-# bin low-time rate (handles the big mass at 0 cleanly)
-ltr_bins <- ltr_bins %>%
+# Bin low-time rate to handle zero-mass
+ltr_bins <- ltr_bins |>
   mutate(
     ltr_bin = cut(
       low_time_rate_all,
@@ -1229,8 +1224,8 @@ ltr_bins <- ltr_bins %>%
     )
   )
 
-ltr_summ <- ltr_bins %>%
-  group_by(ltr_bin) %>%
+ltr_summ <- ltr_bins |>
+  group_by(ltr_bin) |>
   summarise(
     n = n(),
     mean_d = mean(d_rating_next, na.rm = TRUE),
@@ -1238,7 +1233,7 @@ ltr_summ <- ltr_bins %>%
     mean_games = mean(games_total, na.rm = TRUE),
     mean_moves = mean(move_rows_total, na.rm = TRUE),
     .groups = "drop"
-  ) %>%
+  ) |>
   filter(!is.na(ltr_bin))
 
 ggplot(ltr_summ, aes(x = ltr_bin, y = mean_d)) +
@@ -1252,7 +1247,7 @@ ggplot(ltr_summ, aes(x = ltr_bin, y = mean_d)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-# Optional: show the sample size per bin (helps defensibility)
+# Show the sample size per bin
 ggplot(ltr_summ, aes(x = ltr_bin, y = n)) +
   geom_col() +
   labs(
@@ -1336,12 +1331,12 @@ ltr_dist <- dbGetQuery(con, sprintf("
     AND move_rows >= %d
 ", qpath(paths$ptm_tc), min_moves_ptm))
 
-zero_panel <- ltr_dist %>%
-  mutate(panel = "Zero mass", x_cat = if_else(low_time_rate == 0, "0%", ">0%")) %>%
+zero_panel <- ltr_dist |>
+  mutate(panel = "Zero mass", x_cat = if_else(low_time_rate == 0, "0%", ">0%")) |>
   count(tc_bucket, panel, x_cat, name = "n")
 
-positive_panel <- ltr_dist %>%
-  filter(low_time_rate > 0) %>%
+positive_panel <- ltr_dist |>
+  filter(low_time_rate > 0) |>
   mutate(panel = "Positive support")
 
 p1 <- ggplot(zero_panel, aes(x = x_cat, y = n)) +

@@ -21,7 +21,7 @@ import multiprocessing as mp
 
 
 
-# Config/utilities
+# Config/utilities:
 
 def load_cfg():
     with open("config/pipeline.yml", "r", encoding="utf-8") as f:
@@ -40,7 +40,7 @@ def parse_timecontrol(tc_str: str) -> Tuple[Optional[int], Optional[int]]:
         return None, None
 
 def tc_bucket(initial: int, inc: int) -> str:
-    # Lichess convention: base + 40*increment
+    # Lichess convention: base + 40*increment.
     total = initial + 40 * inc
     if total < 180:
         return "bullet"
@@ -94,7 +94,7 @@ def write_run_info(run_info_dir: str):
         f.write("\n".join(lines))
 
 
-# Deterministic anonymization
+# Deterministic anonymization:
 
 @dataclass(frozen=True)
 class AnonCfg:
@@ -134,7 +134,7 @@ def anon_user(username: Optional[str], anon: AnonCfg) -> Optional[str]:
     return "u_" + h[:anon.truncate]
 
 
-# Header-first PGN scanning
+# Header-first PGN scanning:
 
 TAG_RE = re.compile(r'^\[(\w+)\s+"(.*)"\]\s*$')
 
@@ -148,7 +148,6 @@ def parse_headers_from_lines(header_lines: List[str]) -> Dict[str, str]:
     return out
 
 class LineReader:
-    """Line-by-line reader with 1-line pushback."""
     def __init__(self, text_io):
         self._t = text_io
         self._buf = None
@@ -164,7 +163,6 @@ class LineReader:
         self._buf = ln
 
 def read_one_game_header(reader: LineReader) -> Optional[List[str]]:
-    """Read a [Tag "..."] header block; return list of header lines or None at EOF."""
     header_lines = []
     while True:
         ln = reader.readline()
@@ -191,7 +189,6 @@ def read_one_game_header(reader: LineReader) -> Optional[List[str]]:
     return header_lines
 
 def skip_or_collect_movetext(reader: LineReader, keep_text: bool) -> Tuple[Optional[str], int]:
-    """Read movetext until blank line or next header; optionally return text."""
     lines = [] if keep_text else None
     n_lines = 0
     while True:
@@ -211,10 +208,7 @@ def skip_or_collect_movetext(reader: LineReader, keep_text: bool) -> Tuple[Optio
         return "\n".join(lines), n_lines
     return None, n_lines
 
-
-# ---------------------------
-# Output buffering
-# ---------------------------
+# Output buffering:
 
 def make_game_buffer(is_cohort: bool) -> Dict[str, List]:
     cols = {
@@ -285,14 +279,13 @@ def flush_buffer(buf: Dict[str, List], out_path: str, compression: str):
         buf[k].clear()
 
 def seconds_from_clock(node) -> Optional[float]:
-    """Return seconds remaining after move from [%clk ...] annotation if present."""
     try:
         return node.clock()
     except Exception:
         return None
 
 
-# Month worker
+# Month worker:
 
 @dataclass
 class MonthResult:
@@ -348,7 +341,7 @@ def process_month(month: str, cfg: dict, compression: str, anon: AnonCfg,
         moves_mod, moves_keep = 1, {0}
 
     perf = cfg.get("performance", {}) or {}
-    # Games: allow either performance.chunk_size or performance.games_chunk_size
+    # Allow either performance.chunk_size or performance.games_chunk_size.
     chunk_size = int(perf.get("chunk_size", perf.get("games_chunk_size", 25000)))
     moves_chunk_size = int(perf.get("moves_chunk_size", 250000))
 
@@ -367,7 +360,7 @@ def process_month(month: str, cfg: dict, compression: str, anon: AnonCfg,
         moves_month_dir = os.path.join(out_moves_root, f"month={month}")
         ensure_dir(moves_month_dir)
 
-    # Skip logic: skip if all enabled outputs already have parquet files
+    # Skip if all enabled outputs already have parquet files.
     if skip_existing:
         meta_done = _dir_has_parquet(meta_month_dir)
         cohort_done = _dir_has_parquet(cohort_month_dir)
@@ -583,7 +576,7 @@ def process_month(month: str, cfg: dict, compression: str, anon: AnonCfg,
                         flush_buffer(cohort_buf, out_path, compression=compression)
                         cohort_part += 1
 
-                # Move/clock extraction
+                # Move/clock extraction:
                 if keep_moves and moves_enabled and moves_month_dir and moves_buf is not None:
                     kept_moves += 1
 
@@ -613,7 +606,7 @@ def process_month(month: str, cfg: dict, compression: str, anon: AnonCfg,
                                     prev = prev_white
                                 else:
                                     prev = prev_black
-                                # Estimate spent time using increment
+                                # Estimate spent time using increment.
                                 time_spent = prev - (ca - float(inc))
                                 if time_spent < 0:
                                     time_spent = 0.0
@@ -657,7 +650,7 @@ def process_month(month: str, cfg: dict, compression: str, anon: AnonCfg,
 
                 maybe_print_progress(f)
 
-        # Flush remaining buffers
+        # Flush remaining buffers:
         if len(meta_buf["game_id"]) > 0:
             out_path = os.path.join(meta_month_dir, f"part-{meta_part:04d}.parquet")
             flush_buffer(meta_buf, out_path, compression=compression)
@@ -701,7 +694,7 @@ def process_month(month: str, cfg: dict, compression: str, anon: AnonCfg,
         )
 
 
-# Main (parallel orchestrator)
+# Main (parallel orchestrator):
 
 def main():
     ap = argparse.ArgumentParser()

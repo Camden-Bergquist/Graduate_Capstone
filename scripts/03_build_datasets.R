@@ -4,10 +4,11 @@ suppressPackageStartupMessages({
   library(DBI)
 })
 
-# Helpers
-`%||%` <- function(a, b) if (!is.null(a)) a else b
+# Helpers:
+`%||%` <- function(a, b) if (!is.null(a)) a else b # Technically this was defined as an operator in a recent version of R, but I like to define it out of habit 
+                                                   # in case someone tries to run on an earlier version.
 to_fwd <- function(p) gsub("\\\\", "/", normalizePath(p, mustWork = FALSE))
-sql_q  <- function(p) paste0("'", gsub("'", "''", to_fwd(p)), "'")
+sql_q <- function(p) paste0("'", gsub("'", "''", to_fwd(p)), "'")
 
 has_any_parquet <- function(dir_path) {
   if (is.null(dir_path) || !dir.exists(dir_path)) return(FALSE)
@@ -20,19 +21,19 @@ paths <- cfg$paths %||% list()
 run_info_dir <- paths$run_info_dir %||% "data/derived/run_info"
 dir.create(run_info_dir, recursive = TRUE, showWarnings = FALSE)
 
-# Inputs
+# Inputs:
 games_cohort_dir <- paths$games_cohort_dir
-games_meta_dir   <- paths$games_meta_dir
-moves_meta_dir   <- paths$moves_meta_dir %||% NULL
+games_meta_dir <- paths$games_meta_dir
+moves_meta_dir <- paths$moves_meta_dir %||% NULL
 
-# Outputs (defaults if not provided)
-out_player_month         <- paths$player_month_path %||% "data/derived/full_datasets/player_month.parquet"
-out_player_month_tc      <- paths$player_month_tc_path %||% "data/derived/full_datasets/player_month_tc.parquet"
-out_meta_month_tc        <- paths$meta_month_tc_path %||% "data/derived/full_datasets/meta_month_tc.parquet"
-out_meta_opening_month   <- paths$meta_opening_month_tc_path %||% "data/derived/full_datasets/meta_opening_month_tc.parquet"
-out_player_opening_tc    <- paths$player_opening_month_tc_path %||% "data/derived/full_datasets/player_opening_month_tc.parquet"
+# Outputs (defaults if not provided):
+out_player_month <- paths$player_month_path %||% "data/derived/full_datasets/player_month.parquet"
+out_player_month_tc <- paths$player_month_tc_path %||% "data/derived/full_datasets/player_month_tc.parquet"
+out_meta_month_tc <- paths$meta_month_tc_path %||% "data/derived/full_datasets/meta_month_tc.parquet"
+out_meta_opening_month <- paths$meta_opening_month_tc_path %||% "data/derived/full_datasets/meta_opening_month_tc.parquet"
+out_player_opening_tc <- paths$player_opening_month_tc_path %||% "data/derived/full_datasets/player_opening_month_tc.parquet"
 
-out_moves_month_tc       <- paths$moves_month_tc_path %||% "data/derived/moves_month_tc.parquet"
+out_moves_month_tc <- paths$moves_month_tc_path %||% "data/derived/moves_month_tc.parquet"
 out_player_time_month_tc <- paths$player_time_month_tc_path %||% "data/derived/player_time_month_tc.parquet"
 
 # Ensure output dirs exist
@@ -50,17 +51,17 @@ on.exit({
   try(dbDisconnect(con, shutdown = TRUE), silent = TRUE)
 }, add = TRUE)
 
-# Prefer to respect compression choice if present
+# Prefer to respect compression choice if present:
 parq_comp <- tolower((cfg$parquet$compression %||% "zstd"))
 if (!parq_comp %in% c("zstd","snappy","gzip","brotli","lz4","none","uncompressed")) parq_comp <- "zstd"
 message("[INFO] DuckDB parquet compression = ", parq_comp)
 
-# Player datasets from games_cohort
+# Player datasets from games_cohort:
 if (has_any_parquet(games_cohort_dir)) {
   
   parquet_glob <- file.path(games_cohort_dir, "**", "*.parquet")
   
-  # Create a reusable VIEW with two rows per game (white+black perspectives), cohort-only
+  # Create a reusable view with two rows per game (white+black perspectives), cohort-only:
   base_sql <- sprintf("
   CREATE OR REPLACE VIEW subjects AS
   WITH games AS (
@@ -341,13 +342,13 @@ if (has_any_parquet(games_meta_dir)) {
   message("[SKIP] games_meta_dir missing or has no parquet: ", games_meta_dir)
 }
 
-# Time-usage datasets from moves_meta
+# Time-usage datasets from moves_meta:
 
 if (has_any_parquet(moves_meta_dir)) {
   
   moves_glob <- file.path(moves_meta_dir, "**", "*.parquet")
   
-  # Base view, filter clearly-bad rows
+  # Base view, filter clearly-bad rows.
   dbExecute(con, sprintf("
     CREATE OR REPLACE VIEW moves_raw AS
     SELECT
@@ -441,7 +442,7 @@ if (has_any_parquet(moves_meta_dir)) {
   message("[OK] wrote: ", out_moves_month_tc)
   
   # Player-level time usage: player x month x tc_bucket
-  # (HAVING clause avoids tiny samples
+  # HAVING clause avoids tiny samples
   player_time_sql <- sprintf("
   COPY (
     SELECT
@@ -480,5 +481,3 @@ writeLines(capture.output(sessionInfo()),
            file.path(run_info_dir, "R_sessionInfo_build_datasets_duckdb.txt"))
 
 message("[DONE] dataset build complete.")
-``
-::contentReference[oaicite:0]{index=0}
