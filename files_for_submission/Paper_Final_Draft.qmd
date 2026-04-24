@@ -697,29 +697,29 @@ For the macro outcomes, weighted linear models were retained as the primary infe
 \small
 \begin{equation*}
 \begin{aligned}
-Y_{tc, \ t}
+Y_{c,t}
 &=
 \beta_0
 +
 \beta_1 t
 +
-\beta_2 \,\mathbf{1}\{\mathrm{tc}=\mathrm{Classical}\}
+\beta_2\,\mathbf{1}\{c=\text{Classical}\}
 +
-\beta_3 \,\mathbf{1}\{\mathrm{tc}=\mathrm{Rapid}\} \\
+\beta_3\,\mathbf{1}\{c=\text{Rapid}\} \\
 &\quad
 +
-\beta_4 \, t \cdot \mathbf{1}\{\mathrm{tc}=\mathrm{Classical}\}
+\beta_4\,t\,\mathbf{1}\{c=\text{Classical}\}
 +
-\beta_5 \, t \cdot \mathbf{1}\{\mathrm{tc}=\mathrm{Rapid}\}
+\beta_5\,t\,\mathbf{1}\{c=\text{Rapid}\}
 +
-\varepsilon_{tc, \ t}
+\varepsilon_{c,t}.
 \end{aligned}
 \end{equation*}
 
 \par\medskip
 \begin{minipage}{0.92\linewidth}
-\small
-Here, $Y_{tc,t}$ denotes a month-by-time-control metagame outcome, such as HHI concentration, effective number of openings, draw rate, upset rate, or average moves. Inference used Newey--West heteroskedasticity- and autocorrelation-consistent standard errors.
+\footnotesize
+Here, $Y_{c,t}$ denotes a month-by-time-control metagame outcome, such as HHI concentration, effective number of openings, draw rate, upset rate, or average moves. Blitz is the reference time-control category. Inference used Newey--West heteroskedasticity- and autocorrelation-consistent standard errors.
 \end{minipage}
 
 \end{figure}
@@ -738,19 +738,22 @@ Opening composition required a different retained model because opening shares a
 \begin{aligned}
 \Pr(Y_t = k)
 &=
-\frac{\exp(\eta_{k, \ t})}
-{\sum_{j=1}^{K}\exp(\eta_{j, \ t})}, \\
+\frac{\exp(\eta_{k,t})}
+{\sum_{j=1}^{K}\exp(\eta_{j,t})},
+\quad k=1,\dots,K, \\
 \eta_{k,t}
 &=
 \alpha_k + \beta_k t,
-\quad k=1,\dots,K
+\quad k=1,\dots,K-1, \\
+\eta_{K,t}
+&=0.
 \end{aligned}
 \end{equation*}
 
 \par\medskip
 \begin{minipage}{0.92\linewidth}
-\small
-Here, $Y_t$ denotes the opening category at month $t$, and $k$ indexes the retained opening categories.
+\footnotesize
+Here, $Y_t$ denotes the opening category at month $t$, and $k$ indexes the retained opening categories. The final category, $K$, is the reference category, so category-specific effects are interpreted relative to that baseline.
 \end{minipage}
 
 \end{figure}
@@ -786,7 +789,7 @@ Overall, these comparisons support a two-part retained strategy for metagame dyn
 
 ### Opening Popularity {#sec-opening-popularity-2}
 
-Opening popularity was modeled primarily as a compositional problem. The main inferential candidate was a pooled multinomial model fit to month-by-time-control-by-rating-bin cells, with openings aggregated into a retained top-$k$ set plus an “Other” category after sparse cells were excluded. This specification used rating bin, time control, month index, and rating-by-time-control interactions to model opening composition across player-strength strata and formats.
+Opening popularity was modeled primarily as a compositional problem. The main inferential candidate was a pooled multinomial model fit to month-by-time-control-by-rating-bin cells, with openings aggregated into a retained top-$k$ set plus an “Other” category after sparse cells were excluded. Because classical cells were much less consistently supported after this aggregation and sparse-cell filtering, the retained pooled specification was restricted to blitz and rapid. This restriction preserves the rating-by-time-control comparison in the two best-supported formats while avoiding a comparatively unstable classical contrast. The specification used rating bin, time control, month index, and rating-by-time-control interactions to model opening composition across player-strength strata and formats.
 
 Per-opening negative binomial and weighted least squares models were also fit as lower-complexity alternatives. These models were useful as sensitivity checks because they allowed individual openings to be examined one at a time, but that same feature limited their suitability as the primary model for opening choice. Since they do not model the opening set jointly, they cannot represent substitution across openings in a fully coherent way.
 
@@ -803,29 +806,31 @@ The pooled multinomial model was retained as the primary specification for this 
 \begin{aligned}
 \Pr(Y_i = k)
 &=
-\frac{\exp(\eta_{ik})}
-{\sum_{j=1}^{K}\exp(\eta_{ij})}, \\
-\eta_{ik}
+\frac{\exp(\eta_{i,k})}
+{\sum_{j=1}^{K}\exp(\eta_{i,j})},
+\quad k=1,\dots,K, \\
+\eta_{i,k}
 &=
 \alpha_k
 +
 \beta_{1k}\,\mathrm{RatingBin}_i
 +
-\beta_{2k}\,\mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\} \\
+\beta_{2k}\,\mathbf{1}\{c_i=\text{Rapid}\} \\
 &\quad
 +
 \beta_{3k}\,t_i
 +
-\beta_{4k}\,\mathrm{RatingBin}_i
-\cdot
-\mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\}
+\beta_{4k}\,\mathrm{RatingBin}_i\,\mathbf{1}\{c_i=\text{Rapid}\},
+\quad k=1,\dots,K-1, \\
+\eta_{i,K}
+&=0.
 \end{aligned}
 \end{equation*}
 
 \par\medskip
 \begin{minipage}{0.92\linewidth}
-\small
-Here, $Y_i$ denotes the opening category for month-by-time-control-by-rating-bin cell $i$, $t_i$ is the month index, and $k$ indexes the retained opening categories, including ``Other''.
+\footnotesize
+Here, $Y_i$ denotes the opening category for month-by-time-control-by-rating-bin cell $i$, $t_i$ is the month index, and $k$ indexes the retained opening categories, including ``Other''. Blitz is the reference time-control category; classical cells were not included in this pooled specification. Category $K$ is the baseline opening category against which the other opening categories are compared.
 \end{minipage}
 
 \end{figure}
@@ -876,23 +881,23 @@ For average time use, candidate specifications were compared at both the macro m
 +
 \beta_1\,\mathrm{Rating}_i
 +
-\beta_2\,\mathbf{1}\{\mathrm{tc}_i=\mathrm{Classical}\}
+\beta_2\,\mathbf{1}\{c_i=\text{Classical}\}
 +
-\beta_3\,\mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\} \\
+\beta_3\,\mathbf{1}\{c_i=\text{Rapid}\} \\
 &\quad
 +
-\beta_4\,\mathrm{Rating}_i \cdot \mathbf{1}\{\mathrm{tc}_i=\mathrm{Classical}\}
+\beta_4\,\mathrm{Rating}_i\,\mathbf{1}\{c_i=\text{Classical}\}
 +
-\beta_5\,\mathrm{Rating}_i \cdot \mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\}
+\beta_5\,\mathrm{Rating}_i\,\mathbf{1}\{c_i=\text{Rapid}\}
 +
-\varepsilon_i
+\varepsilon_i.
 \end{aligned}
 \end{equation*}
 
 \par\medskip
 \begin{minipage}{0.92\linewidth}
-\small
-Here, $\mathrm{AvgTime}_i$ denotes average time spent for observation $i$, and the interaction terms allow the rating slope to vary by time control.
+\footnotesize
+Here, $\mathrm{AvgTime}_i$ denotes average time spent per move for observation $i$. Blitz is the reference time-control category, and the interaction terms allow the rating slope to vary by time control.
 \end{minipage}
 
 \end{figure}
@@ -915,16 +920,16 @@ For low-time frequency, the main comparison was between a fractional quasibinomi
 +
 \beta_1\,\mathrm{Rating}_i
 +
-\beta_2\,\mathbf{1}\{\mathrm{tc}_i=\mathrm{Classical}\}
+\beta_2\,\mathbf{1}\{c_i=\text{Classical}\}
 +
-\beta_3\,\mathbf{1}\{\mathrm{tc}_i=\mathrm{Rapid}\}
+\beta_3\,\mathbf{1}\{c_i=\text{Rapid}\}.
 \end{aligned}
 \end{equation*}
 
 \par\medskip
 \begin{minipage}{0.92\linewidth}
-\small
-Here, $L_i \in [0, \ 1]$ denotes low-time frequency for observation $i$.
+\footnotesize
+Here, $L_i \in [0,1]$ denotes low-time frequency for observation $i$, and $X_i$ contains rating and time-control indicators. Blitz is the reference time-control category.
 \end{minipage}
 
 \end{figure}
@@ -967,31 +972,31 @@ Across the retained targets, the player fixed-effects specifications provided th
 \small
 \begin{equation*}
 \begin{aligned}
-Y_{it}^{(h)}
+Y_{i,t}^{(h)}
 &=
 \alpha_i
 +
-\beta_1\,\mathrm{AvgRating}_{it}
+\beta_1\,\mathrm{AvgRating}_{i,t}
 +
-\beta_2\,\mathrm{Games}_{it}
+\beta_2\,\mathrm{Games}_{i,t}
 +
-\beta_3\,\mathrm{AvgMoves}_{it} \\
+\beta_3\,\mathrm{AvgMoves}_{i,t} \\
 &\quad
 +
-\beta_4\,\mathrm{OpeningDiversity}_{it}
+\beta_4\,\mathrm{OpeningDiversity}_{i,t}
 +
-\beta_5\,\mathrm{TopOpeningShare}_{it}
+\beta_5\,\mathrm{TopOpeningShare}_{i,t}
 +
-\beta_6\,\mathrm{SwitchedOpening}_{it}
+\beta_6\,\mathrm{SwitchedOpening}_{i,t}
 +
-\varepsilon_{it}
+\varepsilon_{i,t}.
 \end{aligned}
 \end{equation*}
 
 \par\medskip
 \begin{minipage}{0.92\linewidth}
-\small
-Here, $Y_{it}^{(h)} \in \{\Delta \mathrm{Rating}_{i, \ t+1}, \Delta \mathrm{Rating}_{i, \ t+3}, |\Delta \mathrm{Rating}_{i, \ t+1}|\}$.
+\footnotesize
+Here, $\alpha_i$ is a player fixed effect, and $Y_{i,t}^{(h)}$ denotes one of three retained progression targets: $\Delta_1\mathrm{Rating}_{i,t}$, $\Delta_3\mathrm{Rating}_{i,t}$, or $|\Delta_1\mathrm{Rating}_{i,t}|$, where $\Delta_h\mathrm{Rating}_{i,t}=\mathrm{Rating}_{i,t+h}-\mathrm{Rating}_{i,t}$.
 \end{minipage}
 
 \end{figure}
@@ -1028,7 +1033,7 @@ Candidate descriptive approaches included $k$-means clustering, hierarchical clu
 ```{=latex}
 \begin{figure}[htbp]
 \centering
-\caption{Retained $k$-means clustering objective for player categorization.}
+\caption{Retained k-means clustering objective for player categorization.}
 \label{fig:eq-categorization-kmeans}
 
 \small
@@ -1037,14 +1042,14 @@ Candidate descriptive approaches included $k$-means clustering, hierarchical clu
 \min_{C_1,\dots,C_6}
 \sum_{k=1}^{6}
 \sum_{i \in C_k}
-\left\| x_i - \mu_k \right\|^2
+\left\lVert x_i - \mu_k \right\rVert_2^2.
 \end{aligned}
 \end{equation*}
 
 \par\medskip
 \begin{minipage}{0.92\linewidth}
-\small
-Here, $x_i \in \mathbb{R}^p$ denotes the standardized feature vector for observation $i$, $C_k$ denotes cluster $k$, and $\mu_k$ denotes the centroid of cluster $k$.
+\footnotesize
+Here, $x_i \in \mathbb{R}^p$ denotes the standardized feature vector for observation $i$, $C_k$ denotes cluster $k$, and $\mu_k$ denotes the centroid of cluster $k$. The retained solution uses six clusters.
 \end{minipage}
 
 \end{figure}
@@ -1112,7 +1117,7 @@ The intent of metagame-dynamics models was to characterize the state and evoluti
 
 \midrule
 \multicolumn{5}{@{}p{\dimexpr\textwidth-2\tabcolsep\relax}@{}}{%
-\footnotesize \textbf{Note:} Newey--West standard errors. Baseline time trend is for blitz; interaction terms are relative to blitz. '$N_{\text{eff}}$' represents number of effective openings.
+\footnotesize \textbf{Note:} Newey--West standard errors. Baseline time trend is for blitz; interaction terms are relative to blitz. ``$N_{\text{eff}}$'' represents number of effective openings.
 }\\
 \bottomrule
 \endlastfoot
@@ -1321,7 +1326,7 @@ Table \ref{tab:progression-fe-results} provides the central inferential summary.
 
 \midrule
 \multicolumn{5}{@{}p{\dimexpr\textwidth-2\tabcolsep\relax}@{}}{%
-\footnotesize \textbf{Note:} 'Avg. Rating' represents current average rating; 'Switched Opening' represents switching one's most played opening.
+\footnotesize \textbf{Note:} ``Avg. Rating'' represents current average rating; ``Switched Opening'' represents switching one's most played opening.
 }\\
 \bottomrule
 \endlastfoot
@@ -3326,7 +3331,7 @@ p_progression_diag +
 
 \midrule
 \multicolumn{4}{@{}p{\dimexpr\textwidth-2\tabcolsep\relax}@{}}{%
-\footnotesize \textbf{Note:} 'Switched Opening' represents switching one's most played opening. Predicted differences for opening-switching was calculated on values 0 vs 1; predicted differences for all other predictors was calculated on the 25th percentile vs the 75th percentile.
+\footnotesize \textbf{Note:} ``Switched Opening'' represents switching one's most played opening. Predicted differences for opening-switching was calculated on values 0 vs 1; predicted differences for all other predictors was calculated on the 25th percentile vs the 75th percentile.
 }\\
 \bottomrule
 \endlastfoot
