@@ -233,21 +233,29 @@ cov_pm_tc <- dbGetQuery(con, sprintf("
   FROM read_parquet(%s)
   GROUP BY month, tc_bucket
   ORDER BY month, tc_bucket
-", qpath(paths$pm_tc)))
+", qpath(paths$pm_tc))) |>
+  mutate(
+    tc_bucket = factor(
+      tc_bucket,
+      levels = c("blitz", "rapid", "classical")
+    )
+  )
 
 ggplot(cov_pm_tc, aes(x = month, y = n_rows, group = tc_bucket, color = tc_bucket)) +
   geom_line(linewidth = 1) +
   coord_cartesian(clip = "off") +
   labs(x = "Month", y = "Observations", color = "Time Control") +
-  scale_color_few(labels = c("Blitz", "Classical", "Rapid")) +
+  scale_color_few(
+    labels = c("Blitz", "Rapid", "Classical")
+  ) +
   theme_few() + 
   theme(
     panel.grid.major.x = element_blank(),
     panel.grid.major.y = element_line(linewidth = 0.3, colour = "grey85"),
-    panel.grid.minor = element_blank()
-  ) +
-  theme(axis.text.x = element_text(angle = 60, hjust = 1),
-        legend.position = "bottom")
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(angle = 60, hjust = 1),
+    legend.position = "bottom"
+  )
 ```
 <!--
 @fig-reliability and @fig-panel-depth display two different kinds of unreliability inherent to player-month: the former being the number of games played in a given month, and the latter the number of months each player is present for in the data (total; not necessarily consecutive). For @fig-reliability, many player-months contain few games, making outcomes like win rate or average rating noisy at the unit level, justifying a minimum-games filter for player-month analyses, weighting player-month observations by games in aggregated models, and preferring aggregated measures such as bins over raw point clouds; game count should be treated as a precision/weighting signal.
@@ -441,7 +449,12 @@ time_bin <- dbGetQuery(con, sprintf("
   ORDER BY tc_bucket, rating_bin
 ", qpath(paths$ptm_tc)))
 
-ggplot(time_bin, aes(x=rating_bin, y=mean_time_spent)) +
+time_bin$tc_bucket <- factor(
+  time_bin$tc_bucket,
+  levels = c("blitz", "rapid", "classical")
+)
+
+ggplot(time_bin, aes(x = rating_bin, y = mean_time_spent, color = tc_bucket, group = tc_bucket)) +
   geom_line() +
     facet_wrap(~factor(tc_bucket, levels = c("blitz", "rapid", "classical")), scales="free_y", labeller = as_labeller(c(
       blitz = "Blitz",
@@ -449,12 +462,13 @@ ggplot(time_bin, aes(x=rating_bin, y=mean_time_spent)) +
       classical = "Classical"
     ))) +
   labs(x = "Player Rating", y = "Average Time per Move (Seconds)") +
+  scale_color_few() +
   theme_few() + 
   theme(
     panel.grid.major.x = element_blank(),
     panel.grid.major.y = element_line(linewidth = 0.3, colour = "grey85"),
     panel.grid.minor = element_blank(),
-    legend.position = "bottom"
+    legend.position = "none"
   )
 ```
 
@@ -1363,9 +1377,11 @@ Table \ref{tab:progression-fe-results} shows that, for signed targets, higher cu
 #| label: fig-player-progression-results
 #| fig-cap: "Estimated coefficients from the retained player fixed-effects progression models by outcome target."
 #| fig-align: center
+#| fig.width: 8 
 
 p_player_coef <- readRDS("Paper_files/figure-rds/p_player_coef.rds")
-p_player_coef
+p_player_coef +
+  theme(legend.position = "right")
 ```
 
 The absolute-change model helps interpret those signed results. None of the favorable signed predictors is positively associated with greater movement magnitude; if anything, average moves, opening diversity, and switching are associated with smaller absolute month-to-month movement. This weakens the interpretation that the signed results are merely artifacts of noisier or more volatile play.
@@ -2272,8 +2288,8 @@ support_by_rating2 <- dbGetQuery(con, sprintf("
     tc_bucket = factor(tc_bucket, levels = c("blitz", "rapid", "classical"))
   )
 
-ggplot(support_by_rating2, aes(x = rating_bin, y = support)) +
-  geom_col(width = bin_width * 0.9, fill = "steelblue", color = "steelblue") +
+ggplot(support_by_rating2, aes(x = rating_bin, y = support, fill = tc_bucket, group = tc_bucket)) +
+  geom_col(width = bin_width * 0.9) +
   facet_grid(
     measure ~ tc_bucket,
     scales = "free_y",
@@ -2287,11 +2303,13 @@ ggplot(support_by_rating2, aes(x = rating_bin, y = support)) +
     x = "Rating Bin",
     y = NULL,
   ) +
+  scale_fill_few() +
   theme_few() +
   theme(
     panel.grid.major.x = element_blank(),
     panel.grid.major.y = element_line(linewidth = 0.3, colour = "grey85"),
-    panel.grid.minor = element_blank()
+    panel.grid.minor = element_blank(),
+    legend.position = "none"
   )
 ```
 
@@ -2371,8 +2389,15 @@ ggplot(vol, aes(x = games, y = abs_d_rating)) +
 
 # Candidate second sentence for caption: "The top panel shows the distribution of low-time rate, and the bottom panel shows the frequency of exact-zero observations within each format."
 
-min_moves_ptm <- 40
+min_moves_ptm <- 30
 positive_binwidth <- 0.01
+
+tc_levels <- c("blitz", "rapid", "classical")
+tc_labels <- c(
+  blitz = "Blitz",
+  rapid = "Rapid",
+  classical = "Classical"
+)
 
 ltr_dist <- dbGetQuery(con, sprintf("
   SELECT
@@ -2384,48 +2409,41 @@ ltr_dist <- dbGetQuery(con, sprintf("
     AND low_time_rate IS NOT NULL
     AND move_rows IS NOT NULL
     AND move_rows >= %d
-", qpath(paths$ptm_tc), min_moves_ptm))
+", qpath(paths$ptm_tc), min_moves_ptm)) |>
+  mutate(tc_bucket = factor(tc_bucket, levels = tc_levels))
 
-zero_panel <- ltr_dist %>%
-  mutate(panel = "Zero mass", x_cat = if_else(low_time_rate == 0, "0%", ">0%")) %>%
+zero_panel <- ltr_dist |>
+  mutate(
+    panel = "Zero mass",
+    x_cat = if_else(low_time_rate == 0, "0%", ">0%")
+  ) |>
   count(tc_bucket, panel, x_cat, name = "n")
 
-positive_panel <- ltr_dist %>%
-  filter(low_time_rate > 0) %>%
+positive_panel <- ltr_dist |>
+  filter(low_time_rate > 0) |>
   mutate(panel = "Positive support")
 
-p1 <- ggplot(zero_panel, aes(x = x_cat, y = n)) +
-  geom_col(fill = "steelblue", color = "steelblue") +
+p1 <- ggplot(zero_panel, aes(x = x_cat, y = n, fill = tc_bucket, group = tc_bucket)) +
+  geom_col() +
   facet_wrap(
-    ~factor(tc_bucket, levels = c("blitz", "rapid", "classical")),
-    labeller = as_labeller(c(
-      blitz = "Blitz",
-      rapid = "Rapid",
-      classical = "Classical"
-    ))
+    ~tc_bucket,
+    labeller = as_labeller(tc_labels)
   ) +
   scale_y_continuous(labels = label_comma()) +
   labs(
     x = "Exact-Zero Mass",
     y = "Rows"
   ) +
-  theme_few()
+  scale_fill_few(drop = FALSE) +
+  theme_few() +
+  theme(legend.position = "none")
 
-p2 <- ggplot(positive_panel, aes(x = low_time_rate)) +
-  geom_histogram(
-    binwidth = positive_binwidth,
-    boundary = 0,
-    fill = "steelblue",
-    color = "steelblue"
-  ) +
+p2 <- ggplot(positive_panel, aes(x = low_time_rate, fill = tc_bucket, group = tc_bucket)) +
+  geom_histogram(binwidth = positive_binwidth, boundary = 0) +
   facet_wrap(
-    ~factor(tc_bucket, levels = c("blitz", "rapid", "classical")),
+    ~tc_bucket,
     scales = "free_y",
-    labeller = as_labeller(c(
-      blitz = "Blitz",
-      rapid = "Rapid",
-      classical = "Classical"
-    ))
+    labeller = as_labeller(tc_labels)
   ) +
   scale_x_continuous(labels = percent_format(accuracy = 1)) +
   scale_y_continuous(labels = label_comma()) +
@@ -2433,7 +2451,9 @@ p2 <- ggplot(positive_panel, aes(x = low_time_rate)) +
     x = "Low-Time Rate",
     y = "Rows"
   ) +
-  theme_few()
+  scale_fill_few(drop = FALSE) +
+  theme_few() +
+  theme(legend.position = "none")
 
 p2 / p1
 ```
@@ -2669,7 +2689,7 @@ ggplot(phase_long, aes(x=rating_bin, y=sec, color=phase, group=phase)) +
       classical = "Classical"
     ))) +
   labs(x="Rating", y="Average Time per Move (Seconds)", color = "Phase") +
-  scale_color_few(labels = c("Endgame", "Middlegame", "Opening")) +
+  scale_color_fivethirtyeight(labels = c("Endgame", "Middlegame", "Opening")) +
   theme_few() + 
   theme(
     panel.grid.major.x = element_blank(),
@@ -2826,7 +2846,8 @@ Opening Composition & Multinomial & Rapid & 0.923 \\
 
 p_metagame_diag <- readRDS("Paper_files/figure-rds/p_macro_diag.rds")
 p_metagame_diag +
-  labs(title = NULL)
+  labs(title = NULL, color = NULL, shape = NULL) +
+  theme(legend.position = "bottom", legend.box = "vertical")
 ```
 
 ```{=latex}
@@ -2901,7 +2922,7 @@ Weighted Least Squares & Opening Share & 80--81 & 0.0024--0.0046 \\
 
 p_opening_diag <- readRDS("Paper_files/figure-rds/p_opening_calib.rds")
 p_opening_diag +
-  labs(title = NULL, subtitle = NULL)
+  labs(title = NULL, subtitle = NULL, color = NULL)
 ```
 
 ```{=latex}
