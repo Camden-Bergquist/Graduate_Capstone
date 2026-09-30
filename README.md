@@ -19,11 +19,6 @@ The largest derived table contains approximately 7.2 million player-opening-mont
 
 In within-player models, broader opening repertoires and changes in a player's most-played opening were more consistently associated with later rating gains than raw game volume. These are observational associations; they do not establish that changing openings causes improvement.
 
-- [Research paper](files_for_submission/Paper.pdf): methods, results, and limitations.
-- [Exploratory analysis](quarto/EDA.qmd): data exploration and visualizations.
-- [Modeling](quarto/Modeling.qmd): model fitting and evaluation.
-- [Pipeline configuration](config/pipeline.yml): archive months, filters, sampling, and output paths.
-
 ## Repository Structure
 
 | Location | Purpose |
